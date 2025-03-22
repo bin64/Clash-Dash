@@ -872,15 +872,15 @@ struct ZashProviderCard: View {
         .sheet(isPresented: $showingSheet) {
             NavigationStack {
                 ZashProviderDetailView(
-                    provider: provider,
-                    nodes: nodes,
+                    provider: currentProvider,  // 使用currentProvider而不是provider
+                    nodes: viewModel.providerNodes[currentProvider.name] ?? nodes,  // 传递最新的节点数据
                     viewModel: viewModel
                 )
                 .transition(.opacity)
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-            .background(Color(.systemBackground))
+            .background(Color(.systemGroupedBackground))  // 使用systemGroupedBackground保持与其他视图一致
         }
         .frame(height: cardHeight) // 设置固定高度
         // 添加光栅化以提高滑动性能
@@ -1079,11 +1079,16 @@ struct ZashProviderDetailView: View {
     // 添加测速状态
     @State private var isTesting = false
     
+    // 添加计算属性获取最新的节点数据
+    private var currentNodes: [ProxyNode] {
+        return viewModel.providerNodes[provider.name] ?? nodes
+    }
+    
     private var filteredNodes: [ProxyNode] {
         if searchText.isEmpty {
-            return nodes
+            return currentNodes
         } else {
-            return nodes.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+            return currentNodes.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
         }
     }
     
@@ -1127,7 +1132,7 @@ struct ZashProviderDetailView: View {
                 
                 // 节点统计信息
                 HStack {
-                    Text("共 \(nodes.count) 个节点")
+                    Text("共 \(currentNodes.count) 个节点")
                         .font(.system(.subheadline, design: .rounded))
                         .foregroundStyle(.secondary)
                     
@@ -1143,6 +1148,7 @@ struct ZashProviderDetailView: View {
                     }
                 }
                 .padding(.horizontal)
+                .id("stats-\(refreshID)")  // 添加ID以确保刷新
                 
                 // 节点列表
                     if filteredNodes.isEmpty {
@@ -1228,7 +1234,8 @@ struct ZashProviderDetailView: View {
         var orange = 0
         var gray = 0
         
-        for node in nodes {
+        // 使用currentNodes替代nodes
+        for node in currentNodes {
             if node.delay == 0 {
                 gray += 1
             } else if node.delay < lowDelay {
