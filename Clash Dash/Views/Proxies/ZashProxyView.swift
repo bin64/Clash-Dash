@@ -336,6 +336,7 @@ struct ZashGroupCard: View {
                         .font(.system(.subheadline, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                         .id("subtitle-node-\(group.name)-\(group.now)")
                 }
                 
@@ -549,6 +550,8 @@ private struct NodesGrid: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var cachedColumns: [GridItem] = []
     @State private var lastScreenWidth: CGFloat = 0
+    // 添加刷新标识符
+    @State private var refreshID = UUID()
     
     var body: some View {
         if nodes.isEmpty {
@@ -568,12 +571,14 @@ private struct NodesGrid: View {
                         viewModel: viewModel,
                         onTap: {
                             handleNodeTap(nodeName: node.name)
-                        }
+                        },
+                        refreshID: refreshID // 添加刷新ID参数
                     )
-                    .id("\(node.name)-\(viewModel.testingNodes.contains(node.name))")
+                    .id("\(node.name)-\(viewModel.testingNodes.contains(node.name))-\(refreshID)")
                 }
             }
             .padding(.horizontal)
+            .id(refreshID) // 添加刷新标识符
         }
     }
     
@@ -603,9 +608,8 @@ private struct NodesGrid: View {
         return newColumns
     }
     
-    // 处理节点点击
+    // 修改处理节点点击方法，增加刷新功能
     private func handleNodeTap(nodeName: String) {
-        
         HapticManager.shared.impact(.light)
         
         Task {
@@ -613,6 +617,15 @@ private struct NodesGrid: View {
                 providerName: provider.name,
                 proxyName: nodeName
             )
+            
+            // 测速完成后刷新数据
+            await viewModel.fetchProxies()
+            
+            // 添加成功的触觉反馈并更新刷新标识符
+            await MainActor.run {
+                HapticManager.shared.notification(.success)
+                refreshID = UUID()
+            }
         }
     }
 }
@@ -863,9 +876,11 @@ struct ZashProviderCard: View {
                     nodes: nodes,
                     viewModel: viewModel
                 )
+                .transition(.opacity)
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .background(Color(.systemBackground))
         }
         .frame(height: cardHeight) // 设置固定高度
         // 添加光栅化以提高滑动性能
@@ -1059,6 +1074,10 @@ struct ZashProviderDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
     @State private var isLoaded = false
+    // 添加刷新标识符
+    @State private var refreshID = UUID()
+    // 添加测速状态
+    @State private var isTesting = false
     
     private var filteredNodes: [ProxyNode] {
         if searchText.isEmpty {
@@ -1143,28 +1162,45 @@ struct ZashProviderDetailView: View {
                                     viewModel: viewModel,
                                     onTap: {
                                         handleNodeTap(nodeName: node.name)
-                                    }
+                                    },
+                                    refreshID: refreshID // 传递刷新ID
                                 )
-                                .id("\(node.name)-\(viewModel.testingNodes.contains(node.name))")
+                                .id("\(node.name)-\(viewModel.testingNodes.contains(node.name))-\(refreshID)")
                             }
                         }
                         .padding(.horizontal)
+                        .id(refreshID) // 添加刷新标识符
                     }
             }
             .padding(.vertical)
         }
         }
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle(provider.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Task {
+                        // 设置测速状态为true
+                        isTesting = true
+                        // 显示测速中的触觉反馈
+                        HapticManager.shared.impact(.light)
+                        // 执行测速
                         await viewModel.healthCheckProvider(providerName: provider.name)
+                        // 测速完成后刷新数据
+                        await viewModel.fetchProxies()
+                        // 添加成功的触觉反馈
+                        HapticManager.shared.notification(.success)
+                        // 更新刷新标识符
+                        refreshID = UUID()
+                        // 设置测速状态为false
+                        isTesting = false
                     }
                 } label: {
-                    Label("测速", systemImage: "bolt.horizontal")
+                    Label("测速", systemImage: "bolt")
                 }
+                .disabled(isTesting) // 测速过程中禁用按钮
             }
             
             ToolbarItem(placement: .topBarLeading) {
@@ -1221,16 +1257,25 @@ struct ZashProviderDetailView: View {
         return Array(repeating: GridItem(.flexible(minimum: minCardWidth, maximum: maxCardWidth), spacing: spacing), count: optimalColumnCount)
     }
     
-    // 处理节点点击
+    // 处理节点点击 - 更新单个节点测速后的刷新逻辑
     private func handleNodeTap(nodeName: String) {
-        
         HapticManager.shared.impact(.light)
         
         Task {
+            // 测速单个节点
             await viewModel.healthCheckProviderProxy(
                 providerName: provider.name,
                 proxyName: nodeName
             )
+            
+            // 测速完成后刷新数据
+            await viewModel.fetchProxies()
+            
+            // 添加成功的触觉反馈并更新刷新标识符
+            await MainActor.run {
+                HapticManager.shared.notification(.success)
+                refreshID = UUID()
+            }
         }
     }
 }
@@ -1461,17 +1506,11 @@ struct ZashNodeCardOptimized: View {
     let isTesting: Bool
     @ObservedObject var viewModel: ProxyViewModel
     let onTap: () -> Void
+    let refreshID: UUID // 添加刷新ID参数
     
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("lowDelayThreshold") private var lowDelayThreshold = 240
     @AppStorage("mediumDelayThreshold") private var mediumDelayThreshold = 500
-    
-    // 添加缓存属性，减少重复计算
-    @State private var cachedNodeDelay: Int = 0
-    @State private var cachedDelayColor: Color = .gray
-    @State private var cachedNodeTypeLabel: String = ""
-    @State private var cachedNodeTypeLabelColor: Color = .blue
-    @State private var cachedDelayText: String = ""
     
     // 添加固定卡片高度 - 预渲染优化
     private let cardHeight: CGFloat = 90
@@ -1480,16 +1519,107 @@ struct ZashNodeCardOptimized: View {
         colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground)
     }
     
+    // 计算当前节点延迟
+    private var nodeDelay: Int {
+        return node?.delay ?? 0
+    }
+    
+    // 计算延迟显示文本
+    private var delayText: String {
+        if isTesting {
+            return "测速中"
+        } else if nodeDelay > 0 {
+            return "\(nodeDelay) ms"
+        } else {
+            return "超时"
+        }
+    }
+    
+    // 计算延迟颜色
+    private var delayColor: Color {
+        if nodeDelay == 0 {
+            return DelayColor.disconnected
+        } else if nodeDelay < lowDelayThreshold {
+            return DelayColor.low
+        } else if nodeDelay < mediumDelayThreshold {
+            return DelayColor.medium
+        } else {
+            return DelayColor.high
+        }
+    }
+    
+    // 计算节点类型标签
+    private var nodeTypeLabel: String {
+        if viewModel.groups.contains(where: { $0.name == nodeName }) {
+            return "代理组"
+        } else if nodeName == "DIRECT" {
+            return "直连"
+        } else if nodeName == "REJECT" {
+            return "拒绝"
+        } else {
+            let typeText = node?.type ?? "未知"
+            
+            // 简化代理类型名称
+            let simplifiedType: String
+            switch typeText.lowercased() {
+            case "shadowsocks":
+                simplifiedType = "SS"
+            case "vmess":
+                simplifiedType = "V2"
+            case "trojan":
+                simplifiedType = "TR"
+            case "socks5":
+                simplifiedType = "S5"
+            case "http":
+                simplifiedType = "HTTP"
+            case "snell":
+                simplifiedType = "SNL"
+            case "wireguard":
+                simplifiedType = "WG"
+            case "hysteria":
+                simplifiedType = "HY"
+            case "hysteria2":
+                simplifiedType = "HY2"
+            case "tuic":
+                simplifiedType = "TUIC"
+            case "vless":
+                simplifiedType = "VL"
+            case "shadowsocksr":
+                simplifiedType = "SSR"
+            default:
+                // 如果是其他类型，取首字母或前两个字母
+                if typeText.count > 2 {
+                    simplifiedType = String(typeText.prefix(2)).uppercased()
+                } else {
+                    simplifiedType = typeText.uppercased()
+                }
+            }
+            
+            return simplifiedType
+        }
+    }
+    
+    // 计算节点类型标签颜色
+    private var nodeTypeLabelColor: Color {
+        if viewModel.groups.contains(where: { $0.name == nodeName }) {
+            return .blue
+        } else if nodeName == "DIRECT" {
+            return .green
+        } else if nodeName == "REJECT" {
+            return .red
+        } else {
+            return .purple
+        }
+    }
+    
     var body: some View {
-        
-        
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 // 顶部：节点名称和选中状态
                 HStack(alignment: .top, spacing: 8) {
                     // 节点名称
                     Text(nodeName)
-                .font(.system(.body, design: .rounded))
+                        .font(.system(.body, design: .rounded))
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                         .lineLimit(2)
@@ -1514,16 +1644,16 @@ struct ZashNodeCardOptimized: View {
                 
                 // 底部：节点类型和延迟
                 HStack(alignment: .center) {
-                    // 节点类型标签 - 使用缓存的类型标签
-                    Text(cachedNodeTypeLabel)
+                    // 节点类型标签 - 使用计算属性
+                    Text(nodeTypeLabel)
                         .font(.system(.caption, design: .rounded))
                         .fontWeight(.medium)
-                        .foregroundStyle(cachedNodeTypeLabelColor)
+                        .foregroundStyle(nodeTypeLabelColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(cachedNodeTypeLabelColor.opacity(0.1))
+                        .background(nodeTypeLabelColor.opacity(0.1))
                         .clipShape(Capsule())
-                        .id("type-label-\(nodeName)-\(cachedNodeTypeLabel)")
+                        .id("type-label-\(nodeName)-\(nodeTypeLabel)")
                     
                     Spacer()
                         .id("spacer-bottom-\(nodeName)")
@@ -1534,17 +1664,17 @@ struct ZashNodeCardOptimized: View {
                             // 测速动画
                             ZashDelayTestingView()
                                 .id("testing-\(nodeName)")
-        } else {
-                            // 延迟文本 - 使用缓存的延迟文本
-                            Text(cachedDelayText)
+                        } else {
+                            // 延迟文本 - 使用计算属性
+                            Text(delayText)
                                 .font(.system(.caption, design: .rounded))
                                 .fontWeight(.medium)
-                                .foregroundStyle(cachedDelayColor)
+                                .foregroundStyle(delayColor)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(cachedDelayColor.opacity(0.1))
+                                .background(delayColor.opacity(0.1))
                                 .clipShape(Capsule())
-                                .id("delay-\(nodeName)-\(cachedDelayText)")
+                                .id("delay-\(nodeName)-\(delayText)")
                         }
                     }
                     .id("delay-container-\(nodeName)")
@@ -1567,103 +1697,7 @@ struct ZashNodeCardOptimized: View {
         // 添加光栅化以提高滑动性能
         .drawingGroup(opaque: false)
         // 使用更稳定的ID策略，确保当选中的节点变化时视图会更新
-        .id("\(nodeName)-\(isSelected ? "selected" : "normal")-\(isTesting ? "testing" : "idle")-\(cachedNodeDelay)")
-        .onAppear {
-            
-            
-            // 计算并缓存节点延迟
-            if let node = node {
-                
-                self.cachedNodeDelay = node.delay
-            } else {
-                
-                self.cachedNodeDelay = 0
-            }
-            
-            // 计算并缓存延迟颜色
-            let delay = self.cachedNodeDelay
-            if delay == 0 {
-                
-                self.cachedDelayColor = DelayColor.disconnected
-            } else if delay < lowDelayThreshold {
-                
-                self.cachedDelayColor = DelayColor.low
-            } else if delay < mediumDelayThreshold {
-                
-                self.cachedDelayColor = DelayColor.medium
-            } else {
-                
-                self.cachedDelayColor = DelayColor.high
-            }
-            
-            // 计算并缓存节点类型标签
-            if viewModel.groups.contains(where: { $0.name == nodeName }) {
-                
-                self.cachedNodeTypeLabel = "代理组"
-                self.cachedNodeTypeLabelColor = .blue
-            } else if nodeName == "DIRECT" {
-                
-                self.cachedNodeTypeLabel = "直连"
-                self.cachedNodeTypeLabelColor = .green
-            } else if nodeName == "REJECT" {
-                
-                self.cachedNodeTypeLabel = "拒绝"
-                self.cachedNodeTypeLabelColor = .red
-            } else {
-                let typeText = node?.type ?? "未知"
-                
-                // 简化代理类型名称
-                let simplifiedType: String
-                switch typeText.lowercased() {
-                case "shadowsocks":
-                    simplifiedType = "SS"
-                case "vmess":
-                    simplifiedType = "V2"
-                case "trojan":
-                    simplifiedType = "TR"
-                case "socks5":
-                    simplifiedType = "S5"
-                case "http":
-                    simplifiedType = "HTTP"
-                case "snell":
-                    simplifiedType = "SNL"
-                case "wireguard":
-                    simplifiedType = "WG"
-                case "hysteria":
-                    simplifiedType = "HY"
-                case "hysteria2":
-                    simplifiedType = "HY2"
-                case "tuic":
-                    simplifiedType = "TUIC"
-                case "vless":
-                    simplifiedType = "VL"
-                case "shadowsocksr":
-                    simplifiedType = "SSR"
-                default:
-                    // 如果是其他类型，取首字母或前两个字母
-                    if typeText.count > 2 {
-                        simplifiedType = String(typeText.prefix(2)).uppercased()
-                    } else {
-                        simplifiedType = typeText.uppercased()
-                    }
-                }
-                
-                self.cachedNodeTypeLabel = simplifiedType
-                self.cachedNodeTypeLabelColor = .purple
-            }
-            
-            // 计算并缓存延迟显示文本
-            if isTesting {
-                
-                self.cachedDelayText = "测速中"
-            } else if cachedNodeDelay > 0 {
-                
-                self.cachedDelayText = "\(cachedNodeDelay) ms"
-            } else {
-                
-                self.cachedDelayText = "超时"
-            }
-        }
+        .id("\(nodeName)-\(isSelected ? "selected" : "normal")-\(isTesting ? "testing" : "idle")-\(nodeDelay)-\(refreshID)")
     }
 }
 
@@ -1681,6 +1715,24 @@ struct ZashGroupDetailView: View {
     @State private var isInitialAppear = true
     @State private var isLoaded = false
     @State private var delayStats: (green: Int, yellow: Int, orange: Int, gray: Int) = (0, 0, 0, 0)
+    // 添加刷新标识符
+    @State private var refreshID = UUID()
+    // 添加测速状态
+    @State private var isTesting = false
+    
+    // 添加计算属性获取最新的当前选中节点名称
+    private var currentSelectedNodeName: String {
+        // 从 viewModel 获取最新的组数据
+        if let updatedGroup = viewModel.groups.first(where: { $0.name == group.name }) {
+            return updatedGroup.now
+        }
+        return group.now // 如果找不到更新的组，则返回原始数据
+    }
+    
+    // 添加计算属性获取当前节点数据
+    private var currentSelectedNode: ProxyNode? {
+        return viewModel.nodes.first { $0.name == currentSelectedNodeName }
+    }
     
     private var filteredNodes: [String] {
         // 先获取排序后的节点列表
@@ -1698,6 +1750,14 @@ struct ZashGroupDetailView: View {
         GeometryReader { geometry in
         ScrollView {
             VStack(spacing: 16) {
+                    // 将精美的当前节点头部组件移动到 ScrollView 内部
+                    SelectedNodeHeader(
+                        nodeName: currentSelectedNodeName,
+                        node: currentSelectedNode,
+                        viewModel: viewModel
+                    )
+                    .id("selected-node-header-\(currentSelectedNodeName)-\(refreshID)")
+                    
                 // 搜索栏 - 修改样式使其更加明显
                 searchBarView
                 
@@ -1713,31 +1773,32 @@ struct ZashGroupDetailView: View {
                         .padding()
                 } else {
                     // 使用懒加载方式优化列表渲染
-                        LazyVGrid(columns: getColumns(availableWidth: geometry.size.width), spacing: 12) {
-                            ForEach(filteredNodes, id: \.self) { nodeName in
-                                let isNodeSelected = viewModel.groups.first(where: { $0.name == group.name })?.now == nodeName
-                                let isNodeTesting = viewModel.testingNodes.contains(nodeName)
-                                // 使用ID优化ForEach
-                                ZashNodeCardOptimized(
-                                    nodeName: nodeName,
-                                    node: viewModel.nodes.first { $0.name == nodeName },
-                                    isSelected: isNodeSelected,
-                                    isTesting: isNodeTesting,
-                                    viewModel: viewModel,
-                                    onTap: {
-                                        handleNodeTap(nodeName: nodeName)
-                                    }
-                                )
-                                .id("\(nodeName)-\(isNodeSelected)-\(isNodeTesting)")
+                            LazyVGrid(columns: getColumns(availableWidth: geometry.size.width), spacing: 12) {
+                                ForEach(filteredNodes, id: \.self) { nodeName in
+                                    let isNodeSelected = viewModel.groups.first(where: { $0.name == group.name })?.now == nodeName
+                                    let isNodeTesting = viewModel.testingNodes.contains(nodeName)
+                                    // 使用ID优化ForEach，传递refreshID
+                                    ZashNodeCardOptimized(
+                                        nodeName: nodeName,
+                                        node: viewModel.nodes.first { $0.name == nodeName },
+                                        isSelected: isNodeSelected,
+                                        isTesting: isNodeTesting,
+                                        viewModel: viewModel,
+                                        onTap: {
+                                            handleNodeTap(nodeName: nodeName)
+                                        },
+                                        refreshID: refreshID // 传递刷新ID
+                                    )
+                                    .id("\(nodeName)-\(isNodeSelected)-\(isNodeTesting)-\(refreshID)")
+                                }
                             }
-                        }
-                        .padding(.horizontal)
+                            .padding(.horizontal)
+                            .id(refreshID) // 添加刷新标识符
                 }
             }
             .padding(.vertical)
             // 设置为始终可见
             .opacity(1.0)
-            }
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle(group.name)
@@ -1746,11 +1807,27 @@ struct ZashGroupDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Task {
+                            // 设置测速状态为true
+                            isTesting = true
+                            // 显示测速中的触觉反馈
+                            HapticManager.shared.impact(.light)
+                            // 执行测速
                         await viewModel.testGroupSpeed(groupName: group.name)
+                            // 测速完成后刷新数据
+                            await viewModel.fetchProxies()
+                            // 重新计算延迟统计
+                            calculateDelayStats()
+                            // 添加成功的触觉反馈
+                            HapticManager.shared.notification(.success)
+                            // 更新刷新标识符
+                            refreshID = UUID()
+                            // 设置测速状态为false
+                            isTesting = false
                     }
                 } label: {
-                    Label("测速", systemImage: "bolt.horizontal")
+                        Label("测速", systemImage: "bolt")
                 }
+                    .disabled(isTesting) // 测速过程中禁用按钮
             }
             
             ToolbarItem(placement: .topBarLeading) {
@@ -1760,18 +1837,17 @@ struct ZashGroupDetailView: View {
             }
         }
         .onAppear {
-            
             // 直接设置为已加载状态，不使用延迟
             isLoaded = true
             
             // 计算延迟统计
             calculateDelayStats()
-            
-        }
-        .alert("自动测速选择分组", isPresented: $showURLTestAlert) {
-            Button("确定", role: .cancel) { }
-        } message: {
-            Text("该分组不支持手动切换节点，可在全局设置中启用手动切换")
+            }
+            .alert("自动测速选择分组", isPresented: $showURLTestAlert) {
+                Button("确定", role: .cancel) { }
+            } message: {
+                Text("该分组不支持手动切换节点，可在全局设置中启用手动切换")
+            }
         }
     }
     
@@ -1863,9 +1939,8 @@ struct ZashGroupDetailView: View {
             await MainActor.run {
                 // 添加成功的触觉反馈
                 HapticManager.shared.notification(.success)
-                
-                // 关闭详情视图，返回到主视图
-                // dismiss()
+                // 更新刷新标识符
+                refreshID = UUID()
             }
         }
     }
@@ -2091,7 +2166,7 @@ struct DelayRingChart: View {
                             .monospacedDigit()
                             .transition(.opacity)
                             .id("delay-\(selectedNodeDelay)")
-                    } else {
+                        } else {
                         Image(systemName: "xmark.circle")
                             .font(.system(size: size / 3))
                             .foregroundColor(.gray.opacity(0.7))
@@ -2102,6 +2177,146 @@ struct DelayRingChart: View {
                 .animation(.easeInOut, value: selectedNodeDelay)
             }
         }
+    }
+}
+
+// 创建一个更简化的当前选中节点展示组件
+struct SelectedNodeHeader: View {
+    let nodeName: String
+    let node: ProxyNode?
+    @ObservedObject var viewModel: ProxyViewModel
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("lowDelayThreshold") private var lowDelayThreshold = 240
+    @AppStorage("mediumDelayThreshold") private var mediumDelayThreshold = 500
+    
+    // 计算节点延迟
+    private var nodeDelay: Int {
+        return node?.delay ?? 0
+    }
+    
+    // 计算延迟颜色
+    private var delayColor: Color {
+        if nodeDelay == 0 {
+            return DelayColor.disconnected
+        } else if nodeDelay < lowDelayThreshold {
+            return DelayColor.low
+        } else if nodeDelay < mediumDelayThreshold {
+            return DelayColor.medium
+        } else {
+            return DelayColor.high
+        }
+    }
+    
+    // 计算节点类型
+    private var nodeTypeLabel: String {
+        if viewModel.groups.contains(where: { $0.name == nodeName }) {
+            return "代理组"
+        } else if nodeName == "DIRECT" {
+            return "直连"
+        } else if nodeName == "REJECT" {
+            return "拒绝"
+        } else {
+            let typeText = node?.type ?? "未知"
+            
+            // 简化代理类型名称
+            let simplifiedType: String
+            switch typeText.lowercased() {
+            case "shadowsocks": simplifiedType = "SS"
+            case "vmess": simplifiedType = "V2"
+            case "trojan": simplifiedType = "TR"
+            case "socks5": simplifiedType = "S5"
+            case "http": simplifiedType = "HTTP"
+            case "snell": simplifiedType = "SNL"
+            case "wireguard": simplifiedType = "WG"
+            case "hysteria": simplifiedType = "HY"
+            case "hysteria2": simplifiedType = "HY2"
+            case "tuic": simplifiedType = "TUIC"
+            case "vless": simplifiedType = "VL"
+            case "shadowsocksr": simplifiedType = "SSR"
+            default:
+                if typeText.count > 2 {
+                    simplifiedType = String(typeText.prefix(2)).uppercased()
+                } else {
+                    simplifiedType = typeText.uppercased()
+                }
+            }
+            return simplifiedType
+        }
+    }
+    
+    // 计算节点类型标签颜色
+    private var nodeTypeLabelColor: Color {
+        if viewModel.groups.contains(where: { $0.name == nodeName }) {
+            return .blue
+        } else if nodeName == "DIRECT" {
+            return .green
+        } else if nodeName == "REJECT" {
+            return .red
+        } else {
+            return .purple
+        }
+    }
+    
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            // 左侧简化图标 - 移除渐变和阴影
+            ZStack {
+                Circle()
+                    .fill(nodeTypeLabelColor)
+                    .frame(width: 32, height: 32)
+                
+                Text(nodeTypeLabel)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+            }
+            
+            // 中间内容
+            VStack(alignment: .leading, spacing: 2) {
+                Text("当前选中节点")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundColor(.secondary)
+                
+                Text(nodeName)
+                    .font(.system(.callout, design: .rounded))
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
+            
+            Spacer()
+            
+            // 右侧延迟 - 简化版本，移除渐变和阴影
+            if nodeDelay > 0 {
+                Text("\(nodeDelay) ms")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(delayColor)
+                    )
+            } else {
+                Text("超时")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(delayColor)
+                    )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
+        )
+        .padding(.horizontal, 16)
     }
 }
 

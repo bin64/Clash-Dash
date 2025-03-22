@@ -477,7 +477,26 @@ class ProxyViewModel: ObservableObject {
                     
                     // 找到需要断开的连接
                     let connectionsToClose = connectionsResponse.connections.filter { connection in
-                        connection.chains.contains(proxyName)
+                        // 检查该连接是否与当前正在切换的代理组相关
+                        // logger.debug("检查连接: \(connection.chains.joined(separator: " → "))")
+                        // logger.debug("切换组: \(groupName), 新节点: \(proxyName)")
+                        
+                        if let groupIndex = connection.chains.firstIndex(of: groupName) {
+                            // 如果连接链中包含该组，检查是否需要断开
+                            if groupIndex + 1 < connection.chains.count {
+                                // 组后面的节点不是我们新选择的节点则需要断开
+                                let currentProxy = connection.chains[groupIndex + 1]
+                                let shouldClose = currentProxy != proxyName
+                                
+                                if shouldClose {
+                                    logger.debug("需要断开连接: 当前使用\(currentProxy), 切换到\(proxyName)")
+                                }
+                                
+                                return shouldClose
+                            }
+                        }
+                        
+                        return false
                     }
                     logger.info("找到 \(connectionsToClose.count) 个需要断开的连接")
                     
