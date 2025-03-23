@@ -232,6 +232,11 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
     }
     
     @MainActor
+    func refreshServerStatus(for server: ClashServer) async throws {
+        await checkServerStatus(server)
+    }
+    
+    @MainActor
     private func checkServerStatus(_ server: ClashServer) async {
         guard var request = makeRequest(for: server, path: "/version") else {
             updateServerStatus(server, status: .error, message: "无效的请求")

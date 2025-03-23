@@ -277,6 +277,8 @@ struct EditServerView: View {
                                     
                                     // 验证成功后更新服务器
                                     viewModel.updateServer(updatedServer)
+                                    // 刷新控制器状态
+                                    try? await viewModel.refreshServerStatus(for: updatedServer)
                                     await MainActor.run {
                                         dismiss()
                                     }
@@ -298,6 +300,8 @@ struct EditServerView: View {
                                     updatedServer.openWRTUseSSL = false
                                     
                                     viewModel.updateServer(updatedServer)
+                                    // 刷新控制器状态
+                                    try? await viewModel.refreshServerStatus(for: updatedServer)
                                     await MainActor.run {
                                         dismiss()
                                     }
