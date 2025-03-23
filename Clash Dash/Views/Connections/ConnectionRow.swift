@@ -261,7 +261,7 @@ struct ConnectionRow: View {
                     Spacer()
                     
                     // 使用修改后的流量显示组件
-                    HStack(spacing: 16) {
+                    HStack(spacing: 8) {
                         TrafficView(
                             bytes: connection.download,
                             icon: "arrow.down.circle.fill",
@@ -273,6 +273,7 @@ struct ConnectionRow: View {
                             color: .green
                         )
                     }
+                    .padding(.trailing, 4)
                 }
             }
             .padding(.horizontal, 16)
