@@ -26,8 +26,26 @@ struct CompactGroupCard: View {
         if group.type == "LoadBalance" {
             return .blue
         }
-        let delay = viewModel.getNodeDelay(nodeName: group.now)
+        let delay = getFinalNodeDelay(nodeName: group.now)
         return DelayColor.color(for: delay)
+    }
+    
+    private func getFinalNodeDelay(nodeName: String) -> Int {
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            return getFinalNodeDelay(nodeName: proxyGroup.now)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
     }
     
     // Add separate function for sorting
@@ -46,16 +64,16 @@ struct CompactGroupCard: View {
         switch proxyGroupSortOrder {
         case .latencyAsc:
             sortedNodes.sort { node1, node2 in
-                let delay1 = viewModel.getNodeDelay(nodeName: node1)
-                let delay2 = viewModel.getNodeDelay(nodeName: node2)
+                let delay1 = getFinalNodeDelay(nodeName: node1)
+                let delay2 = getFinalNodeDelay(nodeName: node2)
                 if delay1 == 0 { return false }
                 if delay2 == 0 { return true }
                 return delay1 < delay2
             }
         case .latencyDesc:
             sortedNodes.sort { node1, node2 in
-                let delay1 = viewModel.getNodeDelay(nodeName: node1)
-                let delay2 = viewModel.getNodeDelay(nodeName: node2)
+                let delay1 = getFinalNodeDelay(nodeName: node1)
+                let delay2 = getFinalNodeDelay(nodeName: node2)
                 if delay1 == 0 { return false }
                 if delay2 == 0 { return true }
                 return delay1 > delay2
@@ -187,17 +205,6 @@ struct CompactGroupCard: View {
                                         .fontWeight(.medium)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
-                                    
-                                    // let delay = viewModel.getNodeDelay(nodeName: group.now)
-                                    // if delay > 0 {
-                                    //     Text("\(delay) ms")
-                                    //         .font(.caption2)
-                                    //         .padding(.horizontal, 4)
-                                    //         .padding(.vertical, 1)
-                                    //         .background(DelayColor.color(for: delay).opacity(0.1))
-                                    //         .foregroundStyle(DelayColor.color(for: delay))
-                                    //         .clipShape(Capsule())
-                                    // }
                                 }
                             }
                         }
@@ -267,7 +274,7 @@ struct CompactGroupCard: View {
                                 ProxyNodeRow(
                                     nodeName: nodeName,
                                     isSelected: nodeName == group.now,
-                                    delay: viewModel.getNodeDelay(nodeName: nodeName)
+                                    delay: getFinalNodeDelay(nodeName: nodeName)
                                 )
                                 .onTapGesture {
                                     // 添加触觉反馈
