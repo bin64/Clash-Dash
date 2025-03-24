@@ -243,18 +243,20 @@ struct ConnectionRow: View {
                                 .cornerRadius(4)
                         }
                         
-                        if let tagName = getClientTag(for: connection.metadata.sourceIP) {
-                            Text(tagName)
-                                .font(.caption)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
-                                .cornerRadius(4)
-                        } else {
-                            Text("\(connection.metadata.sourceIP):\(connection.metadata.sourcePort)")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            if let tagName = getClientTag(for: connection.metadata.sourceIP) {
+                                Text(tagName)
+                                    .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.blue.opacity(0.1))
+                                    .foregroundColor(.blue)
+                                    .cornerRadius(4)
+                            } else {
+                                Text("\(connection.metadata.sourceIP):\(connection.metadata.sourcePort)")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            }
                         }
                     }
                     
