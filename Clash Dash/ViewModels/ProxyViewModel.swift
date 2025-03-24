@@ -334,6 +334,29 @@ class ProxyViewModel: ObservableObject {
             // print("📊 总节点数量: \(allNodes.count)")
             objectWillChange.send()
             
+            // 检查是否所有节点都超时
+            let nonSpecialNodes = allNodes.filter { node in
+                !["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(node.name.uppercased())
+            }
+            
+            if !nonSpecialNodes.isEmpty {
+                let allNodesTimeout = nonSpecialNodes.allSatisfy { node in
+                    node.delay == 0
+                }
+                
+                if allNodesTimeout {
+                    logger.warning("检测到所有节点都处于超时状态")
+                    
+                    // 尝试对 GLOBAL 组进行一次自动测速
+                    if let globalGroup = self.groups.first(where: { $0.name == "GLOBAL" }) {
+                        logger.info("正在对 GLOBAL 组进行自动测速以尝试刷新节点状态")
+                        Task {
+                            await self.testGroupSpeed(groupName: "GLOBAL")
+                        }
+                    }
+                }
+            }
+            
         } catch {
             logger.error("获取代理错误: \(error)")
         }
