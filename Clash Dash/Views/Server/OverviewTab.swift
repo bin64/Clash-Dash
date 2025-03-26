@@ -223,8 +223,8 @@ struct OverviewTab: View {
             // 设置连通性检测
             loadWebsiteSettings()
             
-            // 如果启用了自动检测，启动连通性检测
-            if autoTestConnectivity {
+            // 只有当连通性检测卡片显示且启用了自动检测时，才启动连通性检测
+            if autoTestConnectivity && (settings.cardVisibility[.connectivity] ?? true) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     connectivityViewModel.testAllConnectivity()
                 }
