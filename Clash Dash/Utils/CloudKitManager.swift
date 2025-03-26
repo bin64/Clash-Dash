@@ -65,7 +65,8 @@ class CloudKitManager: ObservableObject {
         "showSpeedNumberAnimation",
         "showNumberAnimation",
         "widgetDefaultServer",
-        "showDelayRingChart"
+        "showDelayRingChart",
+        "autoRefreshSubscriptionCard"
     ]
     
     private let excludedKeys = Set([

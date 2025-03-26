@@ -9,6 +9,7 @@ struct OverviewCardSettingsView: View {
     @AppStorage("showNumberAnimation") private var showNumberAnimation = true
     @AppStorage("showSpeedNumberAnimation") private var showSpeedNumberAnimation = false
     @AppStorage("speedChartStyle") private var speedChartStyle = SpeedChartStyle.line
+    @AppStorage("autoRefreshSubscriptionCard") private var autoRefreshSubscriptionCard = false
     
     var body: some View {
         List {
@@ -47,6 +48,16 @@ struct OverviewCardSettingsView: View {
                     ForEach(SubscriptionCardStyle.allCases, id: \.self) { style in
                         Text(style.description).tag(style)
                     }
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("自动刷新订阅信息", isOn: $autoRefreshSubscriptionCard)
+                    Text("每次进入概览页面时自动刷新订阅信息卡片")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("订阅信息会优先从 OpenClash 或 Nikki 中获取，如果获取失败则会从 Clash 配置中获取（使用 proxy-providers 才能显示订阅信息）")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 
                 Picker("代理切换卡片样式", selection: $modeSwitchCardStyle) {

@@ -12,6 +12,7 @@ struct SubscriptionInfoCard: View {
     @Namespace private var animation
     @Environment(\.colorScheme) var colorScheme
     @AppStorage("subscriptionCardStyle") private var cardStyle = SubscriptionCardStyle.classic
+    @AppStorage("autoRefreshSubscriptionCard") private var autoRefreshSubscriptionCard = false
     
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -421,6 +422,13 @@ struct SubscriptionInfoCard: View {
                 classicCardContent
             case .modern:
                 modernCardContent
+            }
+        }
+        .onAppear {
+            if autoRefreshSubscriptionCard {
+                Task {
+                    await onRefresh()
+                }
             }
         }
     }
