@@ -143,7 +143,7 @@ struct ConfigEditorView: View {
                 } catch {
                     await MainActor.run {
                         isRestarting = false
-                        errorMessage = "重启 OpenClash 失败: \(error.localizedDescription)"
+                        errorMessage = "重启失败: \(error.localizedDescription)"
                         showError = true
                     }
                 }

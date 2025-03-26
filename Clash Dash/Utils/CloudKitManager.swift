@@ -64,7 +64,8 @@ class CloudKitManager: ObservableObject {
         "mediumDelayThreshold",
         "showSpeedNumberAnimation",
         "showNumberAnimation",
-        "widgetDefaultServer"
+        "widgetDefaultServer",
+        "showDelayRingChart"
     ]
     
     private let excludedKeys = Set([
