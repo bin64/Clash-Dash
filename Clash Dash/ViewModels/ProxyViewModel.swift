@@ -1071,49 +1071,63 @@ class ProxyViewModel: ObservableObject {
         }
     }
     
-    // 修改 getNodeDelay 方法
+    // 修改 getNodeDelay 方法，使其支持递归获取嵌套代理组的延迟
     func getNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
-        // 检查是否是特殊节点（不区分大小写）
-        let upperNodeName = nodeName.uppercased()
-        if ["REJECT"].contains(upperNodeName) {
-            return 0
-        }
-        
-        // 防止循环依赖
+        // 防止循环引用
         if visitedGroups.contains(nodeName) {
             return 0
         }
         
-        // 1. 首先检查是否是实际节点
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            // 查找节点并返回延迟
+            if let node = nodes.first(where: { $0.name == nodeName }) {
+                return node.delay
+            }
+            return 0
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            var newVisited = visitedGroups
+            newVisited.insert(nodeName)
+            return getNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
         if let node = nodes.first(where: { $0.name == nodeName }) {
             return node.delay
         }
         
-        // 2. 然后检查是否是代理组
+        return 0
+    }
+    
+    // 添加获取实际节点和延迟的方法
+    func getActualNodeAndDelay(nodeName: String, visitedGroups: Set<String> = []) -> (String, Int) {
+        // 防止循环依赖
+        if visitedGroups.contains(nodeName) {
+            return (nodeName, 0)
+        }
+        
+        // 如果是代理组
         if let group = groups.first(where: { $0.name == nodeName }) {
             var visited = visitedGroups
             visited.insert(nodeName)
             
-            // 如果是负载均衡组，计算所有子节点的平均延迟
-            if group.type == "LoadBalance" {
-                let delays = group.all.compactMap { childNodeName -> Int? in
-                    let delay = getNodeDelay(nodeName: childNodeName, visitedGroups: visited)
-                    return delay > 0 ? delay : nil
-                }
-                
-                // 如果有有效延迟，返回平均值
-                if !delays.isEmpty {
-                    return delays.reduce(0, +) / delays.count
-                }
-                return 0
-            }
-            
-            // 对于其他类型的组，获取当前选中的节点延迟
-            let currentNodeName = group.now
-            return getNodeDelay(nodeName: currentNodeName, visitedGroups: visited)
+            // 递归获取当前选中节点的实际节点和延迟
+            return getActualNodeAndDelay(nodeName: group.now, visitedGroups: visited)
         }
         
-        return 0
+        // 如果是实际节点
+        if let node = nodes.first(where: { $0.name == nodeName }) {
+            return (node.name, node.delay)
+        }
+        
+        // 如果是特殊节点 (DIRECT/REJECT)
+        return (nodeName, 0)
     }
     
     // 添加方法来保存节点顺序
