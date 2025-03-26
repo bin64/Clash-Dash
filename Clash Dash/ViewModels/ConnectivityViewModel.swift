@@ -138,6 +138,15 @@ class ConnectivityViewModel: ObservableObject {
         }
     }
     
+    // 重置所有网站状态为初始状态（未检测状态）
+    func resetWebsiteStatus() {
+        for i in 0..<websites.count {
+            websites[i].isChecking = false
+            websites[i].isConnected = false
+            websites[i].error = nil
+        }
+    }
+    
     func testConnectivity(for index: Int) {
         guard index < websites.count else { return }
         

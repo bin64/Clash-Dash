@@ -67,6 +67,12 @@ struct ConnectivityItem: View {
     
     @State private var showError = false
     
+    // 添加一个计算属性判断网站是否为未检测状态
+    private var isUntested: Bool {
+        // 未连接成功且没有错误信息，说明还未检测或者初始状态
+        return !website.isConnected && website.error == nil && !website.isChecking
+    }
+    
     var body: some View {
         Button(action: onTap) {
             HStack {
@@ -96,9 +102,17 @@ struct ConnectivityItem: View {
                     ProgressView()
                         .scaleEffect(0.7)
                 } else {
-                    Image(systemName: website.isConnected ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(website.isConnected ? .green : .red)
-                        .font(.system(size: 18))
+                    // 未检测状态 - 既不是连接成功，也没有错误信息
+                    if isUntested {
+                        Image(systemName: "questionmark.circle.fill")
+                            .foregroundColor(.gray)
+                            .font(.system(size: 18))
+                    } else {
+                        // 已检测状态 - 成功或失败
+                        Image(systemName: website.isConnected ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(website.isConnected ? .green : .red)
+                            .font(.system(size: 18))
+                    }
                 }
             }
             .padding(12)
@@ -109,7 +123,8 @@ struct ConnectivityItem: View {
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(
                                 website.isConnected ? Color.green.opacity(0.3) : 
-                                (website.error != nil ? Color.red.opacity(0.3) : Color.gray.opacity(0.2)),
+                                (website.error != nil ? Color.red.opacity(0.3) : 
+                                 (isUntested ? Color.gray.opacity(0.3) : Color.gray.opacity(0.2))),
                                 lineWidth: 1
                             )
                     )

@@ -228,6 +228,10 @@ struct OverviewTab: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     connectivityViewModel.testAllConnectivity()
                 }
+            } else if settings.cardVisibility[.connectivity] ?? true {
+                // 确保连通性卡片显示时，网站状态一定是干净的初始状态
+                // 不会显示错误状态，而是显示未检测状态（中间态）
+                connectivityViewModel.resetWebsiteStatus()
             }
             
             Task {
