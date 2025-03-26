@@ -34,9 +34,10 @@ struct ServerDetailView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             // 概览标签页
-            OverviewTab(server: server, monitor: networkMonitor, selectedTab: $selectedTab)
+            OverviewTab(server: server, monitor: networkMonitor, selectedTab: $selectedTab, settingsViewModel: settingsViewModel)
                 .onAppear {
                     HapticManager.shared.impact(.light)
+                    settingsViewModel.fetchConfig(server: server)
                 }
                 .tabItem {
                     Label("概览", systemImage: "chart.line.uptrend.xyaxis")

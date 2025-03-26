@@ -1,19 +1,23 @@
 import SwiftUI
 import Charts
-
+private let logger = LogManager.shared
 // 2. 更新 OverviewTab
 struct OverviewTab: View {
     let server: ClashServer
     @ObservedObject var monitor: NetworkMonitor
     @StateObject private var settings = OverviewCardSettings()
     @StateObject private var subscriptionManager: SubscriptionManager
+    @StateObject private var connectivityViewModel = ConnectivityViewModel()
+    @ObservedObject var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) var colorScheme
     @Binding var selectedTab: Int
+    @AppStorage("autoTestConnectivity") private var autoTestConnectivity = true
     
-    init(server: ClashServer, monitor: NetworkMonitor, selectedTab: Binding<Int>) {
+    init(server: ClashServer, monitor: NetworkMonitor, selectedTab: Binding<Int>, settingsViewModel: SettingsViewModel) {
         self.server = server
         self.monitor = monitor
         self._selectedTab = selectedTab
+        self.settingsViewModel = settingsViewModel
         self._subscriptionManager = StateObject(wrappedValue: SubscriptionManager(server: server))
     }
     
@@ -50,6 +54,11 @@ struct OverviewTab: View {
         
         // 计算最终的最大值，并留出一些余量（120%）
         return magnitude * scale * 1.2
+    }
+    
+    private func loadWebsiteSettings() {
+        // 加载网站可见性和排序设置
+        connectivityViewModel.loadWebsiteVisibility()
     }
     
     var body: some View {
@@ -197,6 +206,9 @@ struct OverviewTab: View {
                                     await subscriptionManager.refresh()
                                 }
                             }
+                            
+                        case .connectivity:
+                            ConnectivityCard(viewModel: connectivityViewModel)
                         }
                     }
                 }
@@ -207,6 +219,17 @@ struct OverviewTab: View {
         .background(Color(.systemGroupedBackground))
         .onAppear {
             monitor.resetData() // 重置监控数据
+            
+            // 设置连通性检测
+            loadWebsiteSettings()
+            
+            // 如果启用了自动检测，启动连通性检测
+            if autoTestConnectivity {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    connectivityViewModel.testAllConnectivity()
+                }
+            }
+            
             Task {
                 await subscriptionManager.fetchSubscriptionInfo() // 获取订阅信息
             }

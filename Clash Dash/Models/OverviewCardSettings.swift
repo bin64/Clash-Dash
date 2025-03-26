@@ -9,6 +9,7 @@ enum OverviewCard: String, CaseIterable, Identifiable, Codable {
     case memoryChart = "memoryChart"
     case modeSwitch = "modeSwitch"
     case subscription = "subscription"
+    case connectivity = "connectivity"
     
     var id: String { self.rawValue }
     
@@ -21,6 +22,7 @@ enum OverviewCard: String, CaseIterable, Identifiable, Codable {
         case .memoryChart: return "内存图表"
         case .modeSwitch: return "代理模式切换"
         case .subscription: return "订阅信息"
+        case .connectivity: return "连通性检测"
         }
     }
     
@@ -33,6 +35,7 @@ enum OverviewCard: String, CaseIterable, Identifiable, Codable {
         case .memoryChart: return "memorychip"
         case .modeSwitch: return "switch.2"
         case .subscription: return "doc.text.fill"
+        case .connectivity: return "network"
         }
     }
 }
