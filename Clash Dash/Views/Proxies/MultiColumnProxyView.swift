@@ -285,6 +285,31 @@ private struct CardContent: View {
             }
         }
     }
+    
+    private func getFinalNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
+        // 防止循环引用
+        if visitedGroups.contains(nodeName) {
+            return 0
+        }
+        
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            var newVisited = visitedGroups
+            newVisited.insert(nodeName)
+            return getFinalNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
+    }
 }
 
 // 添加卡片背景视图
@@ -812,23 +837,32 @@ private struct ProviderCardBackground: View {
 }
 
 // 辅助函数
-func getActualNodeAndDelay(nodeName: String, viewModel: ProxyViewModel, visitedGroups: Set<String> = []) -> (String, Int) {
+private func getActualNodeAndDelay(nodeName: String, viewModel: ProxyViewModel, visitedGroups: Set<String> = []) -> (String, Int) {
+    // 防止循环依赖
     if visitedGroups.contains(nodeName) {
         return (nodeName, 0)
     }
     
+    // 如果是代理组
     if let group = viewModel.groups.first(where: { $0.name == nodeName }) {
         var visited = visitedGroups
         visited.insert(nodeName)
+        
+        // 递归获取当前选中节点的实际节点和延迟
         return getActualNodeAndDelay(nodeName: group.now, viewModel: viewModel, visitedGroups: visited)
     }
     
+    // 如果是实际节点
     if let node = viewModel.nodes.first(where: { $0.name == nodeName }) {
         return (node.name, node.delay)
     }
     
+    // 如果是特殊节点 (DIRECT/REJECT)
     return (nodeName, 0)
 }
+
+// 修改现有的 ProxyNodeCard 结构体，不要重新声明
+
 
 #Preview {
     MultiColumnProxyView(server: ClashServer(name: "测试服务器", url: "192.168.1.1", port: "9090", secret: "123456"))

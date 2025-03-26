@@ -1526,9 +1526,36 @@ struct ZashNodeCardOptimized: View {
         colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground)
     }
     
-    // 计算当前节点延迟
+    // 添加递归获取最终节点延迟的方法
+    private func getFinalNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
+        // 防止循环引用
+        if visitedGroups.contains(nodeName) {
+            return 0
+        }
+        
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            var newVisited = visitedGroups
+            newVisited.insert(nodeName)
+            return getFinalNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
+    }
+    
+    // 修改计算当前节点延迟的属性
     private var nodeDelay: Int {
-        return node?.delay ?? 0
+        // 使用递归方法获取真实延迟，而不是直接使用 node?.delay
+        return getFinalNodeDelay(nodeName: nodeName)
     }
     
     // 计算延迟显示文本
@@ -1990,7 +2017,7 @@ struct DelayRingChart: View {
     @AppStorage("mediumDelayThreshold") private var mediumDelayThreshold = 500
     @Environment(\.colorScheme) private var colorScheme
     
-    // 获取最终节点的延迟
+    // 修改 DelayRingChart 中的 getFinalNodeDelay 方法
     private func getFinalNodeDelay(nodeName: String) -> Int {
         // 如果是内置节点，直接返回其延迟
         if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
@@ -2001,8 +2028,34 @@ struct DelayRingChart: View {
         if let proxyGroup = viewModel.groups.first(where: { group in
             group.name == nodeName
         }) {
+            // 递归获取当前选中节点的延迟，添加防止循环引用的机制
+            return getFinalNodeDelay(nodeName: proxyGroup.now, visitedGroups: [nodeName])
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
+    }
+    
+    // 添加带访问记录的重载方法
+    private func getFinalNodeDelay(nodeName: String, visitedGroups: Set<String>) -> Int {
+        // 防止循环引用
+        if visitedGroups.contains(nodeName) {
+            return 0
+        }
+        
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
             // 递归获取当前选中节点的延迟
-            return getFinalNodeDelay(nodeName: proxyGroup.now)
+            var newVisited = visitedGroups
+            newVisited.insert(nodeName)
+            return getFinalNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
         }
         
         // 如果是普通节点，直接返回其延迟
@@ -2208,7 +2261,12 @@ struct SelectedNodeHeader: View {
     @AppStorage("mediumDelayThreshold") private var mediumDelayThreshold = 500
     
     // 获取最终节点的延迟
-    private func getFinalNodeDelay(nodeName: String) -> Int {
+    private func getFinalNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
+        // 防止循环引用
+        if visitedGroups.contains(nodeName) {
+            return 0
+        }
+        
         // 如果是内置节点，直接返回其延迟
         if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
             return viewModel.getNodeDelay(nodeName: nodeName)
@@ -2219,7 +2277,9 @@ struct SelectedNodeHeader: View {
             group.name == nodeName
         }) {
             // 递归获取当前选中节点的延迟
-            return getFinalNodeDelay(nodeName: proxyGroup.now)
+            var newVisited = visitedGroups
+            newVisited.insert(nodeName)
+            return getFinalNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
         }
         
         // 如果是普通节点，直接返回其延迟

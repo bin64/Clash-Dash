@@ -391,20 +391,10 @@ struct GroupCard: View {
         let hideUnavailable = UserDefaults.standard.bool(forKey: "hideUnavailableProxies")
         
         for nodeName in group.all {
-            if ["DIRECT", "REJECT"].contains(nodeName) {
-                let delay = viewModel.getNodeDelay(nodeName: nodeName)
-                switch delay {
-                case 0: timeout += 1
-                case DelayColor.lowRange: green += 1
-                case DelayColor.mediumRange: yellow += 1
-                default: red += 1
-                }
-                continue
-            }
+            // 使用递归方法获取延迟
+            let delay = getNodeDelay(nodeName: nodeName)
             
-            let delay = viewModel.getNodeDelay(nodeName: nodeName)
-            
-            if hideUnavailable && delay == 0 {
+            if hideUnavailable && delay == 0 && !["DIRECT", "REJECT"].contains(nodeName) {
                 continue
             }
             
@@ -617,7 +607,33 @@ struct GroupCard: View {
         }
     }
     
-    // 添加递归获取实际节点和延迟的方法
+    // 修改递归获取节点延迟的方法
+    private func getNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
+        // 防止循环依赖
+        if visitedGroups.contains(nodeName) {
+            return 0
+        }
+        
+        // 如果是代理组，递归获取当前选中节点的延迟
+        if let group = viewModel.groups.first(where: { $0.name == nodeName }) {
+            var visited = visitedGroups
+            visited.insert(nodeName)
+            
+            // 获取当前选中的节点
+            let currentNodeName = group.now
+            // 递归获取实际节点的延迟，传递已访问的组列表
+            return getNodeDelay(nodeName: currentNodeName, visitedGroups: visited)
+        }
+        
+        // 如果是实际节点返回节点延迟
+        if let actualNode = viewModel.nodes.first(where: { $0.name == nodeName }) {
+            return actualNode.delay
+        }
+        
+        return 0
+    }
+    
+    // 修改递归获取实际节点和延迟的方法
     private func getActualNodeAndDelay(nodeName: String, visitedGroups: Set<String> = []) -> (String, Int) {
         // 防止循环依赖
         if visitedGroups.contains(nodeName) {
@@ -640,33 +656,6 @@ struct GroupCard: View {
         
         // 如果是特殊节点 (DIRECT/REJECT)
         return (nodeName, 0)
-    }
-    
-    // 修改递归获取节点延迟的方法
-    private func getNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
-        // 防止循环依赖
-        if visitedGroups.contains(nodeName) {
-            return 0
-        }
-        
-        // 如果是 REJECT，直接计入超时
-        if nodeName == "REJECT" {
-            return 0
-        }
-        
-        // 如果是代理组，递归获取当前选中节点的延迟
-        if let group = viewModel.groups.first(where: { $0.name == nodeName }) {
-            var visited = visitedGroups
-            visited.insert(nodeName)
-            return getNodeDelay(nodeName: group.now, visitedGroups: visited)
-        }
-        
-        // 如果是实际节点（包括 DIRECT），回节点延迟
-        if let node = viewModel.nodes.first(where: { $0.name == nodeName }) {
-            return node.delay
-        }
-        
-        return 0
     }
 }
 
@@ -1211,12 +1200,17 @@ struct ProxySelectorSheet: View {
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(availableNodes, id: \.self) { nodeName in
                             let node = viewModel.nodes.first { $0.name == nodeName }
+                            
+                            // 使用递归方法获取延迟
+                            let delay = getNodeDelay(nodeName: nodeName, viewModel: viewModel)
+                            
                             ProxyNodeCard(
                                 nodeName: nodeName,
                                 node: node,
                                 isSelected: group.now == nodeName,
                                 isTesting: node.map { viewModel.testingNodes.contains($0.id) } ?? false,
-                                viewModel: viewModel
+                                viewModel: viewModel,
+                                delay: delay // 传递计算好的延迟
                             )
                             .onTapGesture {
                                 // 添加触觉反馈
@@ -1307,22 +1301,81 @@ struct ProxySelectorSheet: View {
         }
         .presentationDetents([.medium, .large])
     }
+    
+    // 添加辅助方法获取节点延迟
+    private func getNodeDelay(nodeName: String, viewModel: ProxyViewModel, visitedGroups: Set<String> = []) -> Int {
+        // 防止循环引用
+        if visitedGroups.contains(nodeName) {
+            return 0
+        }
+        
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            var newVisited = visitedGroups
+            newVisited.insert(nodeName)
+            return getNodeDelay(nodeName: proxyGroup.now, viewModel: viewModel, visitedGroups: newVisited)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
+    }
 }
 
-// 添加节点卡片视图
+// 修改 ProxyView.swift 中的 ProxyNodeCard 结构体
 struct ProxyNodeCard: View {
     let nodeName: String
     let node: ProxyNode?
     let isSelected: Bool
     let isTesting: Bool
     @ObservedObject var viewModel: ProxyViewModel
+    var delay: Int? = nil // 添加可选参数，允许外部传入计算好的延迟
     @Environment(\.colorScheme) private var colorScheme
     
-    // 添加缓存计算结果
-    private var cardBackgroundColor: Color {
-        colorScheme == .dark ? Color(.secondarySystemBackground) : Color(.secondarySystemBackground)
+    // 添加递归获取延迟的方法
+    private func getFinalNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
+        // 如果外部传入了延迟值，直接使用
+        if let delay = delay {
+            return delay
+        }
+        
+        // 防止循环引用
+        if visitedGroups.contains(nodeName) {
+            return 0
+        }
+        
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            var newVisited = visitedGroups
+            newVisited.insert(nodeName)
+            return getFinalNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
     }
     
+    // 修改获取延迟的逻辑，使用递归方法
+    private var nodeDelay: Int {
+        return getFinalNodeDelay(nodeName: nodeName)
+    }
+    
+    // 修改视图中的延迟显示部分，使用 nodeDelay
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // 节点名称和选中状态
@@ -1382,7 +1435,7 @@ struct ProxyNodeCard: View {
                         .transition(.opacity)
                 } else {
                     // 获取延迟
-                    let delay = viewModel.getNodeDelay(nodeName: nodeName)
+                    let delay = nodeDelay
                     if delay > 0 {
                         Text("\(delay) ms")
                             .font(.caption)
@@ -1416,32 +1469,6 @@ struct ProxyNodeCard: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isSelected)
-    }
-    
-    // 获取节点延迟的辅助方法
-    private func getNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
-        // 防止循环依赖
-        if visitedGroups.contains(nodeName) {
-            return 0
-        }
-        
-        // 如果是代理组，递归获取当前选中节点的延迟
-        if let group = viewModel.groups.first(where: { $0.name == nodeName }) {
-            var visited = visitedGroups
-            visited.insert(nodeName)
-            
-            // 获取当前选中的节点
-            let currentNodeName = group.now
-            // 递归获取实际节点的延迟，传递已访问的组列表
-            return getNodeDelay(nodeName: currentNodeName, visitedGroups: visited)
-        }
-        
-        // 如果是实际节点返回节点延迟
-        if let actualNode = viewModel.nodes.first(where: { $0.name == nodeName }) {
-            return actualNode.delay
-        }
-        
-        return 0
     }
     
     private func getDelayColor(_ delay: Int) -> Color {
