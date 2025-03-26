@@ -1567,42 +1567,34 @@ struct ZashNodeCardOptimized: View {
             let typeText = node?.type ?? "未知"
             
             // 简化代理类型名称
-            let simplifiedType: String
             switch typeText.lowercased() {
             case "shadowsocks":
-                simplifiedType = "SS"
+                return "SS"
             case "vmess":
-                simplifiedType = "V2"
+                return "vmess"
             case "trojan":
-                simplifiedType = "TR"
+                return "Trojan"
             case "socks5":
-                simplifiedType = "S5"
+                return "Socks5"
             case "http":
-                simplifiedType = "HTTP"
+                return "HTTP"
             case "snell":
-                simplifiedType = "SNL"
+                return "Snell"
             case "wireguard":
-                simplifiedType = "WG"
+                return "WG"
             case "hysteria":
-                simplifiedType = "HY"
+                return "HY"
             case "hysteria2":
-                simplifiedType = "HY2"
+                return "HY2"
             case "tuic":
-                simplifiedType = "TUIC"
+                return "TUIC"
             case "vless":
-                simplifiedType = "VL"
+                return "VL"
             case "shadowsocksr":
-                simplifiedType = "SSR"
+                return "SSR"
             default:
-                // 如果是其他类型，取首字母或前两个字母
-                if typeText.count > 2 {
-                    simplifiedType = String(typeText.prefix(2)).uppercased()
-                } else {
-                    simplifiedType = typeText.uppercased()
-                }
+                return typeText
             }
-            
-            return simplifiedType
         }
     }
     
@@ -1998,6 +1990,25 @@ struct DelayRingChart: View {
     @AppStorage("mediumDelayThreshold") private var mediumDelayThreshold = 500
     @Environment(\.colorScheme) private var colorScheme
     
+    // 获取最终节点的延迟
+    private func getFinalNodeDelay(nodeName: String) -> Int {
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            return getFinalNodeDelay(nodeName: proxyGroup.now)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
+    }
+    
     // 使用DelayColor中定义的颜色，保持一致性
     private var delayColors: (low: Color, medium: Color, high: Color, timeout: Color) {
         return (
@@ -2016,7 +2027,7 @@ struct DelayRingChart: View {
         var gray = 0
         
         for nodeName in group.all {
-            let delay = viewModel.getNodeDelay(nodeName: nodeName)
+            let delay = getFinalNodeDelay(nodeName: nodeName)
             if delay == 0 {
                 gray += 1
             } else if delay < lowDelayThreshold {
@@ -2033,19 +2044,19 @@ struct DelayRingChart: View {
     
     // 计算当前选中节点的延迟
     private var selectedNodeDelay: Int {
-        return viewModel.getNodeDelay(nodeName: group.now)
+        return getFinalNodeDelay(nodeName: group.now)
     }
     
     // 获取当前选中节点的延迟颜色
     private var selectedNodeDelayColor: Color {
         let delay = selectedNodeDelay
-            if delay == 0 {
+        if delay == 0 {
             return delayColors.timeout
-            } else if delay < lowDelayThreshold {
+        } else if delay < lowDelayThreshold {
             return delayColors.low
-            } else if delay < mediumDelayThreshold {
+        } else if delay < mediumDelayThreshold {
             return delayColors.medium
-            } else {
+        } else {
             return delayColors.high
         }
     }
@@ -2196,9 +2207,28 @@ struct SelectedNodeHeader: View {
     @AppStorage("lowDelayThreshold") private var lowDelayThreshold = 240
     @AppStorage("mediumDelayThreshold") private var mediumDelayThreshold = 500
     
+    // 获取最终节点的延迟
+    private func getFinalNodeDelay(nodeName: String) -> Int {
+        // 如果是内置节点，直接返回其延迟
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            return viewModel.getNodeDelay(nodeName: nodeName)
+        }
+        
+        // 检查是否是代理组
+        if let proxyGroup = viewModel.groups.first(where: { group in
+            group.name == nodeName
+        }) {
+            // 递归获取当前选中节点的延迟
+            return getFinalNodeDelay(nodeName: proxyGroup.now)
+        }
+        
+        // 如果是普通节点，直接返回其延迟
+        return viewModel.getNodeDelay(nodeName: nodeName)
+    }
+    
     // 计算节点延迟
     private var nodeDelay: Int {
-        return node?.delay ?? 0
+        return getFinalNodeDelay(nodeName: nodeName)
     }
     
     // 计算延迟颜色
@@ -2226,28 +2256,34 @@ struct SelectedNodeHeader: View {
             let typeText = node?.type ?? "未知"
             
             // 简化代理类型名称
-            let simplifiedType: String
             switch typeText.lowercased() {
-            case "shadowsocks": simplifiedType = "SS"
-            case "vmess": simplifiedType = "V2"
-            case "trojan": simplifiedType = "TR"
-            case "socks5": simplifiedType = "S5"
-            case "http": simplifiedType = "HTTP"
-            case "snell": simplifiedType = "SNL"
-            case "wireguard": simplifiedType = "WG"
-            case "hysteria": simplifiedType = "HY"
-            case "hysteria2": simplifiedType = "HY2"
-            case "tuic": simplifiedType = "TUIC"
-            case "vless": simplifiedType = "VL"
-            case "shadowsocksr": simplifiedType = "SSR"
+            case "shadowsocks":
+                return "SS"
+            case "vmess":
+                return "Vmess"
+            case "trojan":
+                return "Trojan"
+            case "socks5":
+                return "Socks5"
+            case "http":
+                return "HTTP"
+            case "snell":
+                return "Snell"
+            case "wireguard":
+                return "WG"
+            case "hysteria":
+                return "HY"
+            case "hysteria2":
+                return "HY2"
+            case "tuic":
+                return "TUIC"
+            case "vless":
+                return "Vless"
+            case "shadowsocksr":
+                return "SSR"
             default:
-                if typeText.count > 2 {
-                    simplifiedType = String(typeText.prefix(2)).uppercased()
-                } else {
-                    simplifiedType = typeText.uppercased()
-                }
+                return typeText
             }
-            return simplifiedType
         }
     }
     
@@ -2266,18 +2302,7 @@ struct SelectedNodeHeader: View {
     
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // 左侧简化图标 - 移除渐变和阴影
-            ZStack {
-                Circle()
-                    .fill(nodeTypeLabelColor)
-                    .frame(width: 32, height: 32)
-                
-                Text(nodeTypeLabel)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-            }
-            
-            // 中间内容
+            // 左侧内容
             VStack(alignment: .leading, spacing: 2) {
                 Text("当前选中节点")
                     .font(.system(size: 12, design: .rounded))
@@ -2287,32 +2312,47 @@ struct SelectedNodeHeader: View {
                     .font(.system(.callout, design: .rounded))
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             
             Spacer()
             
-            // 右侧延迟 - 简化版本，移除渐变和阴影
-            if nodeDelay > 0 {
-                Text("\(nodeDelay) ms")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+            // 右侧标签垂直排列
+            VStack(alignment: .trailing, spacing: 8) {
+                // 节点类型标签
+                Text(nodeTypeLabel)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
-                        Capsule()
-                            .fill(delayColor)
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(nodeTypeLabelColor)
                     )
-            } else {
-                Text("超时")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(delayColor)
-                    )
+                
+                // 延迟标签
+                if nodeDelay > 0 {
+                    Text("\(nodeDelay) ms")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(delayColor)
+                        )
+                } else {
+                    Text("超时")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(delayColor)
+                        )
+                }
             }
         }
         .padding(.horizontal, 16)
