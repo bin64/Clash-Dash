@@ -3,6 +3,13 @@ import SwiftUI
 struct ConnectivityCard: View {
     @ObservedObject var viewModel: ConnectivityViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var settingsViewModel: SettingsViewModel
+    @State private var server: ClashServer?
+    
+    init(viewModel: ConnectivityViewModel, settingsViewModel: SettingsViewModel? = nil) {
+        self.viewModel = viewModel
+        self._settingsViewModel = ObservedObject(wrappedValue: settingsViewModel ?? SettingsViewModel())
+    }
     
     private var cardBackgroundColor: Color {
         colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground)
@@ -17,7 +24,52 @@ struct ConnectivityCard: View {
                 
                 Spacer()
                 
+                if viewModel.isUsingProxy {
+                    Text("通过代理")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(6)
+                } else if viewModel.proxyTested {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 10))
+                        Text("直接连接")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(6)
+                    .onTapGesture {
+                        viewModel.showProxyInfo = true
+                    }
+                }
+                
+                // 添加检查端口按钮
                 Button(action: {
+                    // 从服务器查询实际的HTTP端口
+                    if let server = viewModel.clashServer {
+                        print("🔍 尝试重新获取HTTP端口...")
+                        // 这里假设您有一个方法可以专门获取HTTP端口
+                        Task {
+                            viewModel.manuallyCheckPort()
+                        }
+                    }
+                }) 
+                {
+                    Image(systemName: "network")
+                        .font(.system(size: 12))
+                        .foregroundColor(.blue)
+                }
+                .padding(.leading, 4)
+                
+                Button(action: {
+                    // 重新设置服务器信息并刷新
+                   
                     viewModel.testAllConnectivity()
                     HapticManager.shared.impact(.medium)
                 }) {
@@ -58,6 +110,24 @@ struct ConnectivityCard: View {
         .background(cardBackgroundColor)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+        .alert("代理配置信息", isPresented: $viewModel.showProxyInfo) {
+            Button("确定", role: .cancel) {
+                viewModel.showProxyInfo = false
+            }
+        } message: {
+            Text(viewModel.getProxyDiagnostics())
+        }
+        .onAppear {
+            // 直接获取服务器引用
+            if let serverFromEnv = viewModel.clashServer {
+                server = serverFromEnv
+                let httpPort = settingsViewModel.httpPort
+                if !httpPort.isEmpty {
+                    viewModel.setupWithServer(serverFromEnv, httpPort: httpPort)
+                    print("⚙️ ConnectivityCard - 已重新设置服务器: \(serverFromEnv.url) 端口: \(httpPort)")
+                }
+            }
+        }
     }
 }
 
@@ -85,6 +155,12 @@ struct ConnectivityItem: View {
                         Text(website.name)
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.primary)
+                        
+                        // if website.usedProxy {
+                        //     Image(systemName: "arrow.triangle.branch")
+                        //         .font(.system(size: 10))
+                        //         .foregroundColor(.blue)
+                        // }
                     }
                     
                     if showError, let error = website.error {
@@ -168,7 +244,7 @@ struct ConnectivityItem: View {
     viewModel.websites[2].error = "连接超时"
     
     return VStack {
-        ConnectivityCard(viewModel: viewModel)
+        ConnectivityCard(viewModel: viewModel, settingsViewModel: SettingsViewModel())
     }
     .padding()
     .background(Color(.systemGroupedBackground))

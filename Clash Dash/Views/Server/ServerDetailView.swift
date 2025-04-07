@@ -17,6 +17,7 @@ struct ServerDetailView: View {
     @State private var showingRestartService = false
     @EnvironmentObject private var bindingManager: WiFiBindingManager
     @StateObject private var subscriptionManager: SubscriptionManager
+    @StateObject private var connectivityViewModel = ConnectivityViewModel()
     
     init(server: ClashServer) {
         self.server = server
@@ -34,15 +35,26 @@ struct ServerDetailView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             // 概览标签页
-            OverviewTab(server: server, monitor: networkMonitor, selectedTab: $selectedTab, settingsViewModel: settingsViewModel)
-                .onAppear {
-                    HapticManager.shared.impact(.light)
-                    settingsViewModel.fetchConfig(server: server)
-                }
-                .tabItem {
-                    Label("概览", systemImage: "chart.line.uptrend.xyaxis")
-                }
-                .tag(0)
+            OverviewTab(
+                server: server, 
+                monitor: networkMonitor, 
+                selectedTab: $selectedTab, 
+                settingsViewModel: settingsViewModel,
+                connectivityViewModel: connectivityViewModel
+            )
+            .onAppear {
+                HapticManager.shared.impact(.light)
+                // 首先获取配置
+                settingsViewModel.fetchConfig(server: server) 
+                
+                // 初始设置可能端口为0，我们稍后会通过onChange更新
+                connectivityViewModel.setupWithServer(server, httpPort: settingsViewModel.httpPort)
+                print("⚙️ ServerDetailView - 初始服务器设置, 端口: \(settingsViewModel.httpPort)")
+            }
+            .tabItem {
+                Label("概览", systemImage: "chart.line.uptrend.xyaxis")
+            }
+            .tag(0)
             
             // 代理标签页
             ProxyView(server: server)
@@ -124,6 +136,14 @@ struct ServerDetailView: View {
                 networkMonitor.startMonitoring(server: server)
             } else {
                 networkMonitor.stopMonitoring()
+            }
+        }
+        // 监听HTTP端口变化
+        .onChange(of: settingsViewModel.httpPort) { newPort in
+            print("📣 HTTP端口已更新: \(newPort)")
+            if !newPort.isEmpty && newPort != "0" {
+                connectivityViewModel.setupWithServer(server, httpPort: newPort)
+                print("🔄 已更新ConnectionViewModel中的端口: \(newPort)")
             }
         }
     }

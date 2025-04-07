@@ -7,18 +7,19 @@ struct OverviewTab: View {
     @ObservedObject var monitor: NetworkMonitor
     @StateObject private var settings = OverviewCardSettings()
     @StateObject private var subscriptionManager: SubscriptionManager
-    @StateObject private var connectivityViewModel = ConnectivityViewModel()
+    @StateObject private var connectivityViewModel: ConnectivityViewModel
     @ObservedObject var settingsViewModel: SettingsViewModel
     @Environment(\.colorScheme) var colorScheme
     @Binding var selectedTab: Int
     @AppStorage("autoTestConnectivity") private var autoTestConnectivity = true
     
-    init(server: ClashServer, monitor: NetworkMonitor, selectedTab: Binding<Int>, settingsViewModel: SettingsViewModel) {
+    init(server: ClashServer, monitor: NetworkMonitor, selectedTab: Binding<Int>, settingsViewModel: SettingsViewModel, connectivityViewModel: ConnectivityViewModel) {
         self.server = server
         self.monitor = monitor
         self._selectedTab = selectedTab
         self.settingsViewModel = settingsViewModel
         self._subscriptionManager = StateObject(wrappedValue: SubscriptionManager(server: server))
+        self._connectivityViewModel = StateObject(wrappedValue: connectivityViewModel)
     }
     
     private var cardBackgroundColor: Color {
@@ -208,7 +209,10 @@ struct OverviewTab: View {
                             }
                             
                         case .connectivity:
-                            ConnectivityCard(viewModel: connectivityViewModel)
+                            ConnectivityCard(
+                                viewModel: connectivityViewModel,
+                                settingsViewModel: settingsViewModel
+                            )
                         }
                     }
                 }
