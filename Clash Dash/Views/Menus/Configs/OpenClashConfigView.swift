@@ -367,19 +367,19 @@ struct ConfigCard: View {
                 // 配置信息
                 VStack(alignment: .leading, spacing: 8) {
                     // 更新时间
-                    InfoRow(
+                    ConfigInfoRow(
                         icon: "clock",
-                        text: config.mtime.relativeTimeString()
+                        text: "更新时间:",
+                        message: config.mtime.relativeTimeString()
                     )
                     
-                    // 语法检查状态
-                    if server.luciPackage == .openClash {
-                    InfoRow(
-                        icon: config.check == .normal ? "checkmark.circle.fill" : "xmark.circle.fill",
-                        text: config.check.rawValue,
-                        color: config.check == .normal ? .green : .red
+                    // 语法检查
+                    ConfigInfoRow(
+                        icon: config.check == .normal ? "checkmark.circle" : "exclamationmark.triangle",
+                        text: "语法检查:",
+                        color: config.check == .normal ? .green : .orange,
+                        message: config.check == .normal ? "正常" : "异常"
                     )
-                    }
 
                     // 本地配置或订阅配置
                     // if config.isSubscription {
@@ -396,7 +396,7 @@ struct ConfigCard: View {
                     // }
 
                     // 添加文件大小显示
-                    InfoRow(
+                    ConfigInfoRow(
                         icon: "doc.circle",
                         text: formatFileSize(config.fileSize)
                     )
@@ -638,8 +638,8 @@ extension View {
     }
 }
 
-// 所有组件定义
-struct InfoRow: View {
+// 将InfoRow重命名为ConfigInfoRow
+struct ConfigInfoRow: View {
     let icon: String
     let text: String
     var color: Color = .secondary

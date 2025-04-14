@@ -85,7 +85,7 @@ class ConnectivityViewModel: ObservableObject {
     }
     
     // 通过设置服务器信息来准备测试环境
-    func setupWithServer(_ server: ClashServer, httpPort: String) {
+    func setupWithServer(_ server: ClashServer, httpPort: String, settingsViewModel: SettingsViewModel? = nil) {
         let previousServer = self.clashServer?.url ?? "无"
         let previousPort = self.httpPort
         
@@ -93,12 +93,18 @@ class ConnectivityViewModel: ObservableObject {
         logger.debug("🔄 更新前: 服务器 \(previousServer), 端口: \(previousPort)")
         
         self.clashServer = server
-        self.httpPort = httpPort
         
-        // 如果端口为0或空，尝试从服务器配置中读取
+        // 如果httpPort为空或为0，尝试使用mixedPort
         if httpPort.isEmpty || httpPort == "0" {
-            logger.debug("⚠️ 注意: HTTP端口为空或为0，这可能导致代理测试失败")
-            // 在这里可以添加获取实际端口的代码
+            if let settings = settingsViewModel, !settings.mixedPort.isEmpty, settings.mixedPort != "0" {
+                self.httpPort = settings.mixedPort
+                logger.debug("⚠️ HTTP端口无效，使用mixedPort: \(settings.mixedPort)")
+            } else {
+                self.httpPort = httpPort
+                logger.debug("⚠️ 注意: HTTP端口为空或为0，这可能导致代理测试失败")
+            }
+        } else {
+            self.httpPort = httpPort
         }
     }
     
@@ -415,35 +421,35 @@ class ConnectivityViewModel: ObservableObject {
     @AppStorage("connectivityWebsiteOrder") private var connectivityWebsiteOrderData: Data = Data()
     @AppStorage("connectivityTimeout") private var connectivityTimeout: Double = 10.0
     
-    // 添加代理信息诊断方法
-    func getProxyDiagnostics() -> String {
+    // 修改代理信息诊断方法
+    func getProxyDiagnostics() {
         guard let server = clashServer else {
-            return "未设置服务器信息"
+            logger.error("未设置服务器信息")
+            return
         }
         
-        var info = """
-        === 代理配置 ===
-        服务器: \(server.url)
-        端口: \(httpPort.isEmpty ? "未设置" : httpPort)
-        """
+        logger.error("=== 代理配置 ===")
+        logger.error("服务器: \(server.url)")
+        logger.error("端口: \(httpPort.isEmpty ? "未设置" : httpPort)")
         
         // 添加其他诊断信息
         if let port = Int(httpPort), port <= 0 {
-            info += "\n⚠️ 端口必须大于0"
+            logger.error("⚠️ 端口必须大于0")
         }
-        
-        return info
     }
     
-    // 添加到ConnectivityViewModel中
+    // 修改手动检查端口方法
     func manuallyCheckPort() {
         logger.debug("🔍 手动检查代理配置")
         logger.debug("🔧 检查前状态:")
         logger.debug("  - clashServer: \(clashServer?.url ?? "未设置")")
         logger.debug("  - httpPort: \(httpPort)")
         
+        // 记录诊断信息
+        getProxyDiagnostics()
+        
         guard let server = clashServer else { 
-            logger.debug("❌ 服务器未设置")
+            logger.error("❌ 服务器未设置")
             return 
         }
         

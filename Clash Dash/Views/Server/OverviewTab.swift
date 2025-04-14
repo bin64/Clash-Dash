@@ -12,6 +12,8 @@ struct OverviewTab: View {
     @Environment(\.colorScheme) var colorScheme
     @Binding var selectedTab: Int
     @AppStorage("autoTestConnectivity") private var autoTestConnectivity = true
+    @State private var showingDirectConnectionInfoSheet = false
+    @State private var showingProxyConnectionInfoSheet = false
     
     init(server: ClashServer, monitor: NetworkMonitor, selectedTab: Binding<Int>, settingsViewModel: SettingsViewModel, connectivityViewModel: ConnectivityViewModel) {
         self.server = server
@@ -211,7 +213,9 @@ struct OverviewTab: View {
                         case .connectivity:
                             ConnectivityCard(
                                 viewModel: connectivityViewModel,
-                                settingsViewModel: settingsViewModel
+                                settingsViewModel: settingsViewModel,
+                                showingDirectConnectionInfo: $showingDirectConnectionInfoSheet,
+                                showingProxyConnectionInfo: $showingProxyConnectionInfoSheet
                             )
                         }
                     }
@@ -241,6 +245,26 @@ struct OverviewTab: View {
             Task {
                 await subscriptionManager.fetchSubscriptionInfo() // 获取订阅信息
             }
+        }
+        .sheet(isPresented: $showingDirectConnectionInfoSheet) {
+            DirectConnectionInfoView(
+                isPresented: $showingDirectConnectionInfoSheet,
+                proxyAddress: connectivityViewModel.clashServer?.url ?? "N/A",
+                httpPort: settingsViewModel.httpPort,
+                mixedPort: settingsViewModel.mixedPort,
+                usedPort: connectivityViewModel.httpPort
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingProxyConnectionInfoSheet) {
+            ProxyConnectionInfoView(
+                isPresented: $showingProxyConnectionInfoSheet,
+                proxyAddress: connectivityViewModel.clashServer?.url ?? "N/A",
+                usedPort: connectivityViewModel.httpPort
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
     }
 } 

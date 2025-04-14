@@ -5,10 +5,14 @@ struct ConnectivityCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var settingsViewModel: SettingsViewModel
     @State private var server: ClashServer?
+    @Binding var showingDirectConnectionInfo: Bool
+    @Binding var showingProxyConnectionInfo: Bool
     
-    init(viewModel: ConnectivityViewModel, settingsViewModel: SettingsViewModel? = nil) {
+    init(viewModel: ConnectivityViewModel, settingsViewModel: SettingsViewModel? = nil, showingDirectConnectionInfo: Binding<Bool>, showingProxyConnectionInfo: Binding<Bool>) {
         self.viewModel = viewModel
         self._settingsViewModel = ObservedObject(wrappedValue: settingsViewModel ?? SettingsViewModel())
+        self._showingDirectConnectionInfo = showingDirectConnectionInfo
+        self._showingProxyConnectionInfo = showingProxyConnectionInfo
     }
     
     private var cardBackgroundColor: Color {
@@ -18,20 +22,27 @@ struct ConnectivityCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("网站访问检测", systemImage: "globe.asia.australia.fill")
+                Label("访问检测", systemImage: "globe.asia.australia.fill")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.accentColor)
                 
                 Spacer()
                 
                 if viewModel.isUsingProxy {
-                    Text("通过代理")
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(6)
+                    HStack(spacing: 4) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 10))
+                        Text("通过代理")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(6)
+                    .onTapGesture {
+                        showingProxyConnectionInfo = true
+                    }
                 } else if viewModel.proxyTested {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle")
@@ -45,7 +56,8 @@ struct ConnectivityCard: View {
                     .background(Color.orange.opacity(0.1))
                     .cornerRadius(6)
                     .onTapGesture {
-                        viewModel.showProxyInfo = true
+                        showingDirectConnectionInfo = true
+                        viewModel.getProxyDiagnostics()
                     }
                 }
                 
@@ -110,22 +122,13 @@ struct ConnectivityCard: View {
         .background(cardBackgroundColor)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
-        .alert("代理配置信息", isPresented: $viewModel.showProxyInfo) {
-            Button("确定", role: .cancel) {
-                viewModel.showProxyInfo = false
-            }
-        } message: {
-            Text(viewModel.getProxyDiagnostics())
-        }
         .onAppear {
             // 直接获取服务器引用
             if let serverFromEnv = viewModel.clashServer {
                 server = serverFromEnv
                 let httpPort = settingsViewModel.httpPort
-                if !httpPort.isEmpty {
-                    viewModel.setupWithServer(serverFromEnv, httpPort: httpPort)
-                    print("⚙️ ConnectivityCard - 已重新设置服务器: \(serverFromEnv.url) 端口: \(httpPort)")
-                }
+                viewModel.setupWithServer(serverFromEnv, httpPort: httpPort, settingsViewModel: settingsViewModel)
+                print("⚙️ ConnectivityCard - 已重新设置服务器: \(serverFromEnv.url) 端口: \(httpPort)")
             }
         }
     }
@@ -238,14 +241,41 @@ struct ConnectivityItem: View {
 
 #Preview {
     let viewModel = ConnectivityViewModel()
-    // 模拟一些测试数据
     viewModel.websites[0].isConnected = true
     viewModel.websites[1].isChecking = true
     viewModel.websites[2].error = "连接超时"
-    
+    @State var showDirect = false
+    @State var showProxy = false
+
     return VStack {
-        ConnectivityCard(viewModel: viewModel, settingsViewModel: SettingsViewModel())
+        ConnectivityCard(
+            viewModel: viewModel,
+            settingsViewModel: SettingsViewModel(),
+            showingDirectConnectionInfo: $showDirect,
+            showingProxyConnectionInfo: $showProxy
+        )
     }
     .padding()
     .background(Color(.systemGroupedBackground))
-} 
+}
+
+// 移除此处的 InfoRow 组件定义
+// struct InfoRow: View {
+//     let icon: String
+//     let color: Color
+//     let text: String
+    
+//     var body: some View {
+//         HStack(alignment: .top, spacing: 8) {
+//             Image(systemName: icon)
+//                 .foregroundColor(color)
+//                 .frame(width: 20)
+            
+//             Text(text)
+//                 .font(.system(size: 14))
+//                 .foregroundColor(.primary)
+            
+//             Spacer()
+//         }
+//     }
+// } 

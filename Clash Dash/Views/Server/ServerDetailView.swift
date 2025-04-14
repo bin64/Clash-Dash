@@ -47,8 +47,8 @@ struct ServerDetailView: View {
                 // 首先获取配置
                 settingsViewModel.fetchConfig(server: server) 
                 
-                // 初始设置可能端口为0，我们稍后会通过onChange更新
-                connectivityViewModel.setupWithServer(server, httpPort: settingsViewModel.httpPort)
+                // 初始设置端口，传入settingsViewModel以支持fallback到mixedPort
+                connectivityViewModel.setupWithServer(server, httpPort: settingsViewModel.httpPort, settingsViewModel: settingsViewModel)
                 print("⚙️ ServerDetailView - 初始服务器设置, 端口: \(settingsViewModel.httpPort)")
             }
             .tabItem {
@@ -141,10 +141,8 @@ struct ServerDetailView: View {
         // 监听HTTP端口变化
         .onChange(of: settingsViewModel.httpPort) { newPort in
             print("📣 HTTP端口已更新: \(newPort)")
-            if !newPort.isEmpty && newPort != "0" {
-                connectivityViewModel.setupWithServer(server, httpPort: newPort)
-                print("🔄 已更新ConnectionViewModel中的端口: \(newPort)")
-            }
+            connectivityViewModel.setupWithServer(server, httpPort: newPort, settingsViewModel: settingsViewModel)
+            print("🔄 已更新ConnectionViewModel中的端口: \(newPort)")
         }
     }
     
