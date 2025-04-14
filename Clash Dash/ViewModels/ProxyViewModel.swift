@@ -1071,14 +1071,14 @@ class ProxyViewModel: ObservableObject {
         }
     }
     
-    // 修改 getNodeDelay 方法，使其支持递归获取嵌套代理组的延迟
+    // 修改 getNodeDelay 方法,增加对 LoadBalance 类型的特殊处理
     func getNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
         // 防止循环引用
         if visitedGroups.contains(nodeName) {
             return 0
         }
         
-        // 如果是内置节点，直接返回其延迟
+        // 如果是内置节点,直接返回其延迟
         if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
             // 查找节点并返回延迟
             if let node = nodes.first(where: { $0.name == nodeName }) {
@@ -1091,13 +1091,22 @@ class ProxyViewModel: ObservableObject {
         if let proxyGroup = groups.first(where: { group in
             group.name == nodeName
         }) {
-            // 递归获取当前选中节点的延迟
+            // 如果是 LoadBalance 类型的代理组,直接返回该组的延迟
+            if proxyGroup.type == "LoadBalance" {
+                // print("代理组的名字: \(nodeName)，类型: \(proxyGroup.type)")
+                if let node = nodes.first(where: { $0.name == nodeName }) {
+                    return node.delay
+                }
+                return 0
+            }
+            
+            // 其他类型的代理组,递归获取当前选中节点的延迟
             var newVisited = visitedGroups
             newVisited.insert(nodeName)
             return getNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
         }
         
-        // 如果是普通节点，直接返回其延迟
+        // 如果是普通节点,直接返回其延迟
         if let node = nodes.first(where: { $0.name == nodeName }) {
             return node.delay
         }
@@ -1114,6 +1123,15 @@ class ProxyViewModel: ObservableObject {
         
         // 如果是代理组
         if let group = groups.first(where: { $0.name == nodeName }) {
+            // 如果是 LoadBalance 类型的代理组,直接返回该组
+            if group.type == "LoadBalance" {
+                
+                if let node = nodes.first(where: { $0.name == nodeName }) {
+                    return (node.name, node.delay)
+                }
+                return (nodeName, 0)
+            }
+            
             var visited = visitedGroups
             visited.insert(nodeName)
             
