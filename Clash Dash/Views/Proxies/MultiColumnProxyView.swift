@@ -39,6 +39,7 @@ struct MultiColumnProxyView: View {
                         LazyVGrid(columns: columns, spacing: 16) {
                             ForEach(viewModel.getSortedGroups(), id: \.name) { group in
                                 MultiColumnGroupCard(group: group, viewModel: viewModel, containerWidth: geometry.size.width)
+                                    .contentShape(Rectangle())
                                     .onTapGesture {
                                         HapticManager.shared.impact(.light)
                                         selectedGroup = group
@@ -221,6 +222,7 @@ struct MultiColumnGroupCard: View {
             )
             .scaleEffect(viewModel.testingGroups.contains(group.name) ? 0.98 : 1.0)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: viewModel.testingGroups.contains(group.name))
+            .contentShape(Rectangle())
     }
 }
 

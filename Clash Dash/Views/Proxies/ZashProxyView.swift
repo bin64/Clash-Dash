@@ -1596,7 +1596,7 @@ struct ZashNodeCardOptimized: View {
             case "tuic":
                 return "TUIC"
             case "vless":
-                return "VL"
+                return "vless"
             case "shadowsocksr":
                 return "SSR"
             default:
