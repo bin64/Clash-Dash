@@ -36,7 +36,23 @@ class ServerDetailViewModel: ObservableObject {
         let pluginName: String
         switch server.luciPackage {
         case .openClash:
-            command = "opkg status luci-app-openclash 2>/dev/null | awk -F ': ' '/Version/{print \"v\"$2}'"
+            // 先检查是否使用opkg
+            let checkOPKGCommand: [String: Any] = [
+                "method": "exec",
+                "params": ["opkg status luci-app-openclash 2>/dev/null | grep 'Version'"]
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: checkOPKGCommand)
+            let (checkData, _) = try await URLSession.secure.data(for: request)
+            let checkResponse = try JSONDecoder().decode(UCIResponse.self, from: checkData)
+            
+            // 如果opkg命令返回为空，尝试使用apk命令
+            if checkResponse.result.isEmpty {
+                command = "apk version luci-app-openclash 2>/dev/null | grep luci-app-openclash | awk -F '-' '{sub(/[ \t].*$/, \"\", $(NF)); print \"v\"$(NF)}'"
+                logger.info("使用APK获取OpenClash版本")
+            } else {
+                command = "opkg status luci-app-openclash 2>/dev/null | awk -F ': ' '/Version/{print \"v\"$2}'"
+                logger.info("使用OPKG获取OpenClash版本")
+            }
             pluginName = "OpenClash"
         case .mihomoTProxy:
             // 先检查是否使用 nikki
