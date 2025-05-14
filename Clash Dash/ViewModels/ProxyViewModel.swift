@@ -148,6 +148,7 @@ class ProxyViewModel: ObservableObject {
     @Published var testingGroups: Set<String> = []
     @Published var savedNodeOrder: [String: [String]] = [:] // 移除 private 修饰符
     @Published var testingProviders: Set<String> = []
+    @Published var allProxyDetails: [String: ProxyDetail] = [:] // 新增：保存所有代理的详细信息
     
     private let server: ClashServer
     private var currentTask: Task<Void, Never>?
@@ -221,6 +222,8 @@ class ProxyViewModel: ObservableObject {
             if let proxiesResponse = try? JSONDecoder().decode(ProxyResponse.self, from: proxiesData) {
                 // logger.log("✅ 成功解析 proxies 数据")
                 logger.info("成功解析 proxies 数据")
+                self.allProxyDetails = proxiesResponse.proxies // 保存所有代理的详细信息
+
                 let proxyNodes = proxiesResponse.proxies.map { name, proxy in
                     ProxyNode(
                         id: proxy.id ?? UUID().uuidString,
@@ -1087,31 +1090,130 @@ class ProxyViewModel: ObservableObject {
             return 0
         }
         
-        // 检查是否是代理组
-        if let proxyGroup = groups.first(where: { group in
-            group.name == nodeName
-        }) {
-            // 如果是 LoadBalance 类型的代理组,直接返回该组的延迟
-            if proxyGroup.type == "LoadBalance" {
-                // print("代理组的名字: \(nodeName)，类型: \(proxyGroup.type)")
+        var visitedCopy = visitedGroups
+        visitedCopy.insert(nodeName)
+
+        // 优先检查 allProxyDetails 是否为组类型
+        if let detail = self.allProxyDetails[nodeName], detail.all != nil {
+            if detail.type == "LoadBalance" {
+                // LoadBalance 组的延迟可能直接记录在 nodes 数组中
                 if let node = nodes.first(where: { $0.name == nodeName }) {
                     return node.delay
                 }
-                return 0
+                return 0 // 如果 LB 组本身不在 nodes 中，则认为延迟为0或根据实际情况处理
             }
             
-            // 其他类型的代理组,递归获取当前选中节点的延迟
-            var newVisited = visitedGroups
-            newVisited.insert(nodeName)
-            return getNodeDelay(nodeName: proxyGroup.now, visitedGroups: newVisited)
+            // 其他类型的代理组 (Selector, URLTest 等), 递归获取当前选中节点的延迟
+            if let currentNow = detail.now, !currentNow.isEmpty {
+                return getNodeDelay(nodeName: currentNow, visitedGroups: visitedCopy)
+            } else {
+                // 如果组没有 now 指向或指向为空，则认为其延迟为0
+                return 0
+            }
         }
         
-        // 如果是普通节点,直接返回其延迟
+        // 如果不是 allProxyDetails 中的组，则检查是否为普通节点
         if let node = nodes.first(where: { $0.name == nodeName }) {
             return node.delay
         }
         
-        return 0
+        return 0 // 未找到节点或无法解析，返回0
+    }
+    
+    // 添加打印代理组嵌套结构的方法
+    func printProxyGroupStructure() {
+        print("\n===== 代理组嵌套结构 =====")
+        for group in groups {
+            print("代理组: \(group.name) [\(group.type)]")
+            printNodeStructure(nodeName: group.now, level: 1, visitedGroups: Set([group.name]))
+            print("------------------------")
+        }
+        print("=========================\n")
+    }
+    
+    // 辅助方法：递归打印节点结构
+    func printNodeStructure(nodeName: String, level: Int, visitedGroups: Set<String>) {
+        let indent = String(repeating: "  ", count: level)
+        
+        // 防止循环引用
+        if visitedGroups.contains(nodeName) {
+            print("\(indent)⚠️ 循环引用: \(nodeName)")
+            return
+        }
+        
+        // 特殊内置节点
+        if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nodeName.uppercased()) {
+            print("\(indent)📌 内置节点: \(nodeName)")
+            return
+        }
+        
+        var visitedCopy = visitedGroups
+        visitedCopy.insert(nodeName)
+        
+        // 优先检查 allProxyDetails 是否为组类型
+        if let detail = self.allProxyDetails[nodeName], detail.all != nil {
+            //  使用新的 getNodeDelay 获取延迟
+            let effectiveDelay = getNodeDelay(nodeName: nodeName, visitedGroups: Set())
+            print("\(indent)📦 子代理组: \(nodeName) [\(detail.type)] 延迟: \(effectiveDelay)ms")
+            
+            if detail.type == "LoadBalance" {
+                print("\(indent)  ⚖️ 负载均衡组，包含 \(detail.all?.count ?? 0) 个节点")
+                // 可选：如果需要，可以打印 LoadBalance 组的成员
+                // for memberNodeName in detail.all ?? [] {
+                //     printNodeStructure(nodeName: memberNodeName, level: level + 1, visitedGroups: visitedCopy)
+                // }
+                return
+            }
+            
+            // 其他类型的代理组 (Selector, URLTest), 如果 'now' 存在则递归
+            if let currentNow = detail.now, !currentNow.isEmpty {
+                printNodeStructure(nodeName: currentNow, level: level + 1, visitedGroups: visitedCopy)
+            } else {
+                print("\(indent)  👉 (组配置不完整或已达末端)")
+            }
+            return
+        }
+        
+        // 如果不是 allProxyDetails 中的组，则检查是否为普通节点
+        if let node = nodes.first(where: { $0.name == nodeName }) {
+            print("\(indent)🔸 实际节点: \(nodeName) 延迟: \(node.delay)ms")
+            return
+        }
+        
+        // 未找到的节点
+        print("\(indent)❓ 未知节点: \(nodeName)")
+    }
+    
+    // 添加一个方法来获取并打印节点的完整路径
+    func getNodePath(groupName: String) -> String {
+        var path = [groupName]
+        var visitedGroups = Set<String>([groupName])
+        var currentName = groupName
+        
+        while let proxyGroup = groups.first(where: { $0.name == currentName }) {
+            if proxyGroup.type == "LoadBalance" {
+                path.append("[\(proxyGroup.type)]")
+                break
+            }
+            
+            let nextName = proxyGroup.now
+            if visitedGroups.contains(nextName) {
+                path.append("循环引用: \(nextName)")
+                break
+            }
+            
+            path.append(nextName)
+            visitedGroups.insert(nextName)
+            currentName = nextName
+            
+            // 如果是特殊节点或普通节点则结束
+            if ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(nextName.uppercased()) ||
+                !groups.contains(where: { $0.name == nextName }) {
+                break
+            }
+        }
+        
+        return path.joined(separator: " → ")
     }
     
     // 添加获取实际节点和延迟的方法
@@ -1121,30 +1223,32 @@ class ProxyViewModel: ObservableObject {
             return (nodeName, 0)
         }
         
-        // 如果是代理组
-        if let group = groups.first(where: { $0.name == nodeName }) {
-            // 如果是 LoadBalance 类型的代理组,直接返回该组
-            if group.type == "LoadBalance" {
-                
-                if let node = nodes.first(where: { $0.name == nodeName }) {
-                    return (node.name, node.delay)
-                }
-                return (nodeName, 0)
+        var visitedCopy = visitedGroups
+        visitedCopy.insert(nodeName)
+
+        // 优先检查 allProxyDetails 是否为组类型
+        if let detail = self.allProxyDetails[nodeName], detail.all != nil {
+            if detail.type == "LoadBalance" {
+                // 对于 LoadBalance 组，其本身就是一个节点，直接返回其信息
+                let delay = getNodeDelay(nodeName: nodeName, visitedGroups: Set()) // 使用更新后的 getNodeDelay
+                return (nodeName, delay)
             }
             
-            var visited = visitedGroups
-            visited.insert(nodeName)
-            
-            // 递归获取当前选中节点的实际节点和延迟
-            return getActualNodeAndDelay(nodeName: group.now, visitedGroups: visited)
+            // 其他类型的代理组 (Selector, URLTest 等), 递归获取
+            if let currentNow = detail.now, !currentNow.isEmpty {
+                return getActualNodeAndDelay(nodeName: currentNow, visitedGroups: visitedCopy)
+            } else {
+                // 如果组没有 now 指向或指向为空，则返回组本身，延迟为0
+                return (nodeName, 0)
+            }
         }
         
-        // 如果是实际节点
+        // 如果不是 allProxyDetails 中的组，则检查是否为普通节点
         if let node = nodes.first(where: { $0.name == nodeName }) {
             return (node.name, node.delay)
         }
         
-        // 如果是特殊节点 (DIRECT/REJECT)
+        // 如果是特殊节点 (DIRECT/REJECT) 或未知节点
         return (nodeName, 0)
     }
     

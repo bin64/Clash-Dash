@@ -1166,6 +1166,16 @@ struct ProxySelectorSheet: View {
                     let sortedNodes = viewModel.getSortedNodes(group.all, in: group)
                     viewModel.saveNodeOrder(for: group.name, nodes: sortedNodes)
                 }
+                
+                // 打印当前代理组的嵌套情况
+                print("\n===== 代理组[\(group.name)]嵌套结构 =====")
+                viewModel.printNodeStructure(nodeName: group.now, level: 1, visitedGroups: Set([group.name]))
+                print("------------------------")
+                
+                // 打印当前代理组的完整路径
+                let path = viewModel.getNodePath(groupName: group.name)
+                print("完整代理路径: \(path)")
+                print("=========================\n")
             }
             .onDisappear {
                 // 在关闭时清除保存的顺序，这样下次打开时会重新排序
