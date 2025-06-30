@@ -1047,23 +1047,44 @@ class ProxyViewModel: ObservableObject {
     }
     
     // 添加辅助方法来处理节点排序
+    // 排序优先级：有效延迟 > 超时(0) > 无延迟信息(-1)
     private func sortNodes(_ nodes: [String], sortOrder: String) -> [String] {
         switch sortOrder {
         case "latencyAsc":
             return nodes.sorted { node1, node2 in
                 let delay1 = getNodeDelay(nodeName: node1)
                 let delay2 = getNodeDelay(nodeName: node2)
-                if delay1 == 0 { return false }
-                if delay2 == 0 { return true }
-                return delay1 < delay2
+                
+                // 优先级排序：有效延迟 > 超时 > 无延迟信息
+                if delay1 > 0 && delay2 <= 0 { return true }
+                if delay1 <= 0 && delay2 > 0 { return false }
+                if delay1 == 0 && delay2 == -1 { return true }
+                if delay1 == -1 && delay2 == 0 { return false }
+                
+                // 两者都是有效延迟，按延迟大小排序
+                if delay1 > 0 && delay2 > 0 {
+                    return delay1 < delay2
+                }
+                
+                return false // 两者都是无效值时保持原顺序
             }
         case "latencyDesc":
             return nodes.sorted { node1, node2 in
                 let delay1 = getNodeDelay(nodeName: node1)
                 let delay2 = getNodeDelay(nodeName: node2)
-                if delay1 == 0 { return false }
-                if delay2 == 0 { return true }
-                return delay1 > delay2
+                
+                // 优先级排序：有效延迟 > 超时 > 无延迟信息
+                if delay1 > 0 && delay2 <= 0 { return true }
+                if delay1 <= 0 && delay2 > 0 { return false }
+                if delay1 == 0 && delay2 == -1 { return true }
+                if delay1 == -1 && delay2 == 0 { return false }
+                
+                // 两者都是有效延迟，按延迟大小倒序排序
+                if delay1 > 0 && delay2 > 0 {
+                    return delay1 > delay2
+                }
+                
+                return false // 两者都是无效值时保持原顺序
             }
         case "nameAsc":
             return nodes.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
@@ -1075,10 +1096,11 @@ class ProxyViewModel: ObservableObject {
     }
     
     // 修改 getNodeDelay 方法,增加对 LoadBalance 类型的特殊处理
+    // 返回值说明: -1=无延迟信息, 0=超时, >0=有效延迟
     func getNodeDelay(nodeName: String, visitedGroups: Set<String> = []) -> Int {
         // 防止循环引用
         if visitedGroups.contains(nodeName) {
-            return 0
+            return -1 // 循环引用认为是无延迟信息
         }
         
         // 如果是内置节点,直接返回其延迟
@@ -1087,7 +1109,7 @@ class ProxyViewModel: ObservableObject {
             if let node = nodes.first(where: { $0.name == nodeName }) {
                 return node.delay
             }
-            return 0
+            return -1 // 内置节点找不到认为是无延迟信息
         }
         
         var visitedCopy = visitedGroups
@@ -1100,15 +1122,15 @@ class ProxyViewModel: ObservableObject {
                 if let node = nodes.first(where: { $0.name == nodeName }) {
                     return node.delay
                 }
-                return 0 // 如果 LB 组本身不在 nodes 中，则认为延迟为0或根据实际情况处理
+                return -1 // 如果 LB 组本身不在 nodes 中，则认为无延迟信息
             }
             
             // 其他类型的代理组 (Selector, URLTest 等), 递归获取当前选中节点的延迟
             if let currentNow = detail.now, !currentNow.isEmpty {
                 return getNodeDelay(nodeName: currentNow, visitedGroups: visitedCopy)
             } else {
-                // 如果组没有 now 指向或指向为空，则认为其延迟为0
-                return 0
+                // 如果组没有 now 指向或指向为空，则认为无延迟信息
+                return -1
             }
         }
         
@@ -1117,7 +1139,7 @@ class ProxyViewModel: ObservableObject {
             return node.delay
         }
         
-        return 0 // 未找到节点或无法解析，返回0
+        return -1 // 未找到节点或无法解析，返回-1表示无延迟信息
     }
     
     // 添加打印代理组嵌套结构的方法
@@ -1217,10 +1239,11 @@ class ProxyViewModel: ObservableObject {
     }
     
     // 添加获取实际节点和延迟的方法
+    // 返回值说明: 延迟 -1=无延迟信息, 0=超时, >0=有效延迟
     func getActualNodeAndDelay(nodeName: String, visitedGroups: Set<String> = []) -> (String, Int) {
         // 防止循环依赖
         if visitedGroups.contains(nodeName) {
-            return (nodeName, 0)
+            return (nodeName, -1)
         }
         
         var visitedCopy = visitedGroups
@@ -1238,8 +1261,8 @@ class ProxyViewModel: ObservableObject {
             if let currentNow = detail.now, !currentNow.isEmpty {
                 return getActualNodeAndDelay(nodeName: currentNow, visitedGroups: visitedCopy)
             } else {
-                // 如果组没有 now 指向或指向为空，则返回组本身，延迟为0
-                return (nodeName, 0)
+                // 如果组没有 now 指向或指向为空，则返回组本身，无延迟信息
+                return (nodeName, -1)
             }
         }
         
@@ -1249,7 +1272,7 @@ class ProxyViewModel: ObservableObject {
         }
         
         // 如果是特殊节点 (DIRECT/REJECT) 或未知节点
-        return (nodeName, 0)
+        return (nodeName, -1)
     }
     
     // 添加方法来保存节点顺序

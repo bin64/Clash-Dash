@@ -382,11 +382,12 @@ struct GroupCard: View {
         colorScheme == .dark ? Color(.systemGray6) : Color(.systemBackground)
     }
     
-    private var delayStats: (green: Int, yellow: Int, red: Int, timeout: Int) {
+    private var delayStats: (green: Int, yellow: Int, red: Int, timeout: Int, unknown: Int) {
         var green = 0
         var yellow = 0
         var red = 0
         var timeout = 0
+        var unknown = 0
         
         let hideUnavailable = UserDefaults.standard.bool(forKey: "hideUnavailableProxies")
         
@@ -394,11 +395,12 @@ struct GroupCard: View {
             // 使用 viewModel 的方法获取延迟
             let delay = viewModel.getNodeDelay(nodeName: nodeName)
             
-            if hideUnavailable && delay == 0 && !["DIRECT", "REJECT"].contains(nodeName) {
+            if hideUnavailable && delay <= 0 && !["DIRECT", "REJECT"].contains(nodeName) {
                 continue
             }
             
             switch delay {
+            case -1: unknown += 1
             case 0: timeout += 1
             case DelayColor.lowRange: green += 1
             case DelayColor.mediumRange: yellow += 1
@@ -406,7 +408,7 @@ struct GroupCard: View {
             }
         }
         
-        return (green, yellow, red, timeout)
+        return (green, yellow, red, timeout, unknown)
     }
     
     private var totalNodes: Int {
@@ -418,7 +420,7 @@ struct GroupCard: View {
                     return true
                 }
                 let delay = viewModel.getNodeDelay(nodeName: nodeName)
-                return delay > 0
+                return delay > 0 // 只显示有有效延迟的节点
             }.count
         } else {
             return group.all.count
@@ -451,6 +453,16 @@ struct GroupCard: View {
                             Image(systemName: "arrow.triangle.branch")
                                 .foregroundStyle(.blue)
                                 .font(.caption2)
+                        } else if group.type == "Smart" {
+                            if #available(iOS 18.0, *) {
+                                Image(systemName: "apple.intelligence")
+                                    .foregroundStyle(.blue)
+                                    .font(.caption2)
+                            } else {
+                                Image(systemName: "wand.and.rays.inverse")
+                                    .foregroundStyle(.blue)
+                                    .font(.caption2)
+                            }
                         }
                     }
                 }
@@ -506,6 +518,22 @@ struct GroupCard: View {
                                 .background(DelayColor.color(for: finalDelay).opacity(0.1))
                                 .foregroundStyle(DelayColor.color(for: finalDelay))
                                 .clipShape(Capsule())
+                        } else if finalDelay == 0 {
+                            Text("超时")
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(DelayColor.color(for: finalDelay).opacity(0.1))
+                                .foregroundStyle(DelayColor.color(for: finalDelay))
+                                .clipShape(Capsule())
+                        } else {
+                            Text("未知")
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(DelayColor.color(for: finalDelay).opacity(0.1))
+                                .foregroundStyle(DelayColor.color(for: finalDelay))
+                                .clipShape(Capsule())
                         }
                     }
                 }
@@ -523,6 +551,7 @@ struct GroupCard: View {
                 yellow: delayStats.yellow,
                 red: delayStats.red,
                 timeout: delayStats.timeout,
+                unknown: delayStats.unknown,
                 total: totalNodes
             )
             .padding(.horizontal, 2)
@@ -645,7 +674,12 @@ struct ProxyProviderCard: View {
               info.total > 0 else { return nil }
         let used = Double(info.upload + info.download)
         let total = Double(info.total)
-        let percentage = ((total - used) / total) * 100  // 修改为计算剩余流量百分比
+        
+        // 安全计算剩余流量百分比，确保值在合理范围内
+        guard used.isFinite && total.isFinite && total > 0 else { return nil }
+        let remaining = max(0, total - used) // 确保剩余流量不为负数
+        let percentage = min(100, max(0, (remaining / total) * 100)) // 确保百分比在 0-100 范围内
+        
         return (formatBytes(Int64(used)), formatBytes(info.total), percentage)
     }
     
@@ -818,7 +852,7 @@ struct ProxyProviderCard: View {
                             
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(getTrafficColor(percentage: percentage))
-                                .frame(width: geometry.size.width * CGFloat(min(percentage, 100)) / 100, height: 4)
+                                .frame(width: max(0, min(geometry.size.width, geometry.size.width * CGFloat(max(0, min(percentage, 100))) / 100)), height: 4)
                         }
                     }
                     .frame(height: 4)
@@ -1326,8 +1360,17 @@ struct ProxyNodeCard: View {
                             .foregroundStyle(getDelayColor(delay))
                             .clipShape(Capsule())
                             .transition(.opacity)
-                    } else {
+                    } else if delay == 0 {
                         Text("超时")
+                            .font(.caption)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(.red.opacity(0.1))
+                            .foregroundStyle(.red)
+                            .clipShape(Capsule())
+                            .transition(.opacity)
+                    } else {
+                        Text("未知")
                             .font(.caption)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 2)
@@ -1377,8 +1420,10 @@ struct DelayColor {
     
     static func color(for delay: Int) -> Color {
         switch delay {
+        case -1:
+            return Color(red: 0.5, green: 0.5, blue: 0.5) // 灰色表示无延迟信息
         case 0:
-            return Color(red: 1.0, green: 0.2, blue: 0.2) // 更艳的红色
+            return Color(red: 1.0, green: 0.2, blue: 0.2) // 更艳的红色表示超时
         case lowRange:
             return Color(red: 0.2, green: 0.8, blue: 0.2) // 鲜艳的绿色
         case mediumRange:
@@ -1388,6 +1433,7 @@ struct DelayColor {
         }
     }
     
+    static let unknown = Color(red: 0.5, green: 0.5, blue: 0.5) // 灰色表示无延迟信息
     static let disconnected = Color(red: 1.0, green: 0.2, blue: 0.2) // 更鲜艳的红色
     static let low = Color(red: 0.2, green: 0.8, blue: 0.2) // 鲜艳的绿色
     static let medium = Color(red: 1.0, green: 0.75, blue: 0.0) // 明亮的黄色
@@ -1422,6 +1468,7 @@ struct DelayBar: View {
     let yellow: Int
     let red: Int
     let timeout: Int
+    let unknown: Int
     let total: Int
     
     var body: some View {
@@ -1434,7 +1481,7 @@ struct DelayBar: View {
                             width: CGFloat(green) / CGFloat(total) * geometry.size.width,
                             color: DelayColor.low,
                             isFirst: true,
-                            isLast: yellow == 0 && red == 0 && timeout == 0
+                            isLast: yellow == 0 && red == 0 && timeout == 0 && unknown == 0
                         )
                     }
                     
@@ -1444,7 +1491,7 @@ struct DelayBar: View {
                             width: CGFloat(yellow) / CGFloat(total) * geometry.size.width,
                             color: DelayColor.medium,
                             isFirst: green == 0,
-                            isLast: red == 0 && timeout == 0
+                            isLast: red == 0 && timeout == 0 && unknown == 0
                         )
                     }
                     
@@ -1454,7 +1501,7 @@ struct DelayBar: View {
                             width: CGFloat(red) / CGFloat(total) * geometry.size.width,
                             color: DelayColor.high,
                             isFirst: green == 0 && yellow == 0,
-                            isLast: timeout == 0
+                            isLast: timeout == 0 && unknown == 0
                         )
                     }
                     
@@ -1464,6 +1511,16 @@ struct DelayBar: View {
                             width: CGFloat(timeout) / CGFloat(total) * geometry.size.width,
                             color: DelayColor.disconnected,
                             isFirst: green == 0 && yellow == 0 && red == 0,
+                            isLast: unknown == 0
+                        )
+                    }
+                    
+                    // 未知延迟部分
+                    if unknown > 0 {
+                        DelaySegment(
+                            width: CGFloat(unknown) / CGFloat(total) * geometry.size.width,
+                            color: DelayColor.unknown,
+                            isFirst: green == 0 && yellow == 0 && red == 0 && timeout == 0,
                             isLast: true
                         )
                     }

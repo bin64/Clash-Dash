@@ -1145,6 +1145,7 @@ struct ZashProviderDetailView: View {
                         DelayStatBadge(count: stats.yellow, color: .yellow, label: "中延迟")
                         DelayStatBadge(count: stats.orange, color: .orange, label: "高延迟")
                         DelayStatBadge(count: stats.gray, color: .gray, label: "超时")
+                        DelayStatBadge(count: stats.unknown, color: .secondary, label: "未知")
                     }
                 }
                 .padding(.horizontal)
@@ -1221,8 +1222,9 @@ struct ZashProviderDetailView: View {
         }
     }
     
-    // 获取延迟统计
-    private func getDelayStats() -> (green: Int, yellow: Int, orange: Int, gray: Int) {
+    // 获取延迟统计 
+    // 返回值说明: green=低延迟, yellow=中延迟, orange=高延迟, gray=超时, unknown=无延迟信息
+    private func getDelayStats() -> (green: Int, yellow: Int, orange: Int, gray: Int, unknown: Int) {
         let lowThreshold = UserDefaults.standard.integer(forKey: "lowDelayThreshold")
         let mediumThreshold = UserDefaults.standard.integer(forKey: "mediumDelayThreshold")
         
@@ -1233,21 +1235,27 @@ struct ZashProviderDetailView: View {
         var yellow = 0
         var orange = 0
         var gray = 0
+        var unknown = 0
         
-        // 使用currentNodes替代nodes
+        // 使用currentNodes替代nodes，通过viewModel获取延迟
         for node in currentNodes {
-            if node.delay == 0 {
+            let delay = viewModel.getNodeDelay(nodeName: node.name)
+            
+            switch delay {
+            case -1:
+                unknown += 1
+            case 0:
                 gray += 1
-            } else if node.delay < lowDelay {
+            case let d where d > 0 && d < lowDelay:
                 green += 1
-            } else if node.delay < mediumDelay {
+            case let d where d >= lowDelay && d < mediumDelay:
                 yellow += 1
-            } else {
+            default:
                 orange += 1
             }
         }
         
-        return (green, yellow, orange, gray)
+        return (green, yellow, orange, gray, unknown)
     }
     
     // 修改 getColumns 方法，使用传入的实际可用宽度
@@ -1544,20 +1552,25 @@ struct ZashNodeCardOptimized: View {
             return "测速中"
         } else if nodeDelay > 0 {
             return "\(nodeDelay) ms"
-        } else {
+        } else if nodeDelay == 0 {
             return "超时"
+        } else {
+            return "未知"
         }
     }
     
     // 计算延迟颜色
     private var delayColor: Color {
-        if nodeDelay == 0 {
+        switch nodeDelay {
+        case -1:
+            return DelayColor.unknown
+        case 0:
             return DelayColor.disconnected
-        } else if nodeDelay < lowDelayThreshold {
+        case let d where d > 0 && d < lowDelayThreshold:
             return DelayColor.low
-        } else if nodeDelay < mediumDelayThreshold {
+        case let d where d >= lowDelayThreshold && d < mediumDelayThreshold:
             return DelayColor.medium
-        } else {
+        default:
             return DelayColor.high
         }
     }
@@ -1720,7 +1733,7 @@ struct ZashGroupDetailView: View {
     @State private var lastScreenWidth: CGFloat = 0
     @State private var isInitialAppear = true
     @State private var isLoaded = false
-    @State private var delayStats: (green: Int, yellow: Int, orange: Int, gray: Int) = (0, 0, 0, 0)
+    @State private var delayStats: (green: Int, yellow: Int, orange: Int, gray: Int, unknown: Int) = (0, 0, 0, 0, 0)
     // 添加刷新标识符
     @State private var refreshID = UUID()
     // 添加测速状态
@@ -1906,6 +1919,7 @@ struct ZashGroupDetailView: View {
                 DelayStatBadge(count: delayStats.yellow, color: .yellow, label: "中延迟")
                 DelayStatBadge(count: delayStats.orange, color: .orange, label: "高延迟")
                 DelayStatBadge(count: delayStats.gray, color: .gray, label: "超时")
+                DelayStatBadge(count: delayStats.unknown, color: .secondary, label: "未知")
             }
         }
         .padding(.horizontal)
@@ -1953,6 +1967,7 @@ struct ZashGroupDetailView: View {
     }
     
     // 计算延迟统计并缓存结果
+    // 统计说明: green=低延迟, yellow=中延迟, orange=高延迟, gray=超时, unknown=无延迟信息
     private func calculateDelayStats() {
         let lowThreshold = UserDefaults.standard.integer(forKey: "lowDelayThreshold")
         let mediumThreshold = UserDefaults.standard.integer(forKey: "mediumDelayThreshold")
@@ -1964,24 +1979,26 @@ struct ZashGroupDetailView: View {
         var yellow = 0
         var orange = 0
         var gray = 0
+        var unknown = 0
         
         for nodeName in group.all {
-            if let node = viewModel.nodes.first(where: { $0.name == nodeName }) {
-                if node.delay == 0 {
-                    gray += 1
-                } else if node.delay < lowDelay {
-                    green += 1
-                } else if node.delay < mediumDelay {
-                    yellow += 1
-                } else {
-                    orange += 1
-                }
-            } else {
+            let delay = viewModel.getNodeDelay(nodeName: nodeName)
+            
+            switch delay {
+            case -1:
+                unknown += 1
+            case 0:
                 gray += 1
+            case let d where d > 0 && d < lowDelay:
+                green += 1
+            case let d where d >= lowDelay && d < mediumDelay:
+                yellow += 1
+            default:
+                orange += 1
             }
         }
         
-        self.delayStats = (green, yellow, orange, gray)
+        self.delayStats = (green, yellow, orange, gray, unknown)
     }
 }
 
@@ -2008,27 +2025,33 @@ struct DelayRingChart: View {
         )
     }
     
-    // 计算延迟分布
-    private var delayStats: (green: Int, yellow: Int, orange: Int, gray: Int) {
+    // 计算延迟分布 
+    // 返回值说明: green=低延迟, yellow=中延迟, orange=高延迟, gray=超时, unknown=无延迟信息
+    private var delayStats: (green: Int, yellow: Int, orange: Int, gray: Int, unknown: Int) {
         var green = 0
         var yellow = 0
         var orange = 0
         var gray = 0
+        var unknown = 0
         
         for nodeName in group.all {
             let delay = viewModel.getNodeDelay(nodeName: nodeName)
-            if delay == 0 {
+            
+            switch delay {
+            case -1:
+                unknown += 1
+            case 0:
                 gray += 1
-            } else if delay < lowDelayThreshold {
+            case let d where d > 0 && d < lowDelayThreshold:
                 green += 1
-            } else if delay < mediumDelayThreshold {
+            case let d where d >= lowDelayThreshold && d < mediumDelayThreshold:
                 yellow += 1
-            } else {
+            default:
                 orange += 1
             }
         }
         
-        return (green, yellow, orange, gray)
+        return (green, yellow, orange, gray, unknown)
     }
     
     // 计算当前选中节点的延迟
@@ -2039,13 +2062,17 @@ struct DelayRingChart: View {
     // 获取当前选中节点的延迟颜色
     private var selectedNodeDelayColor: Color {
         let delay = selectedNodeDelay
-        if delay == 0 {
+        
+        switch delay {
+        case -1:
+            return DelayColor.unknown
+        case 0:
             return delayColors.timeout
-        } else if delay < lowDelayThreshold {
+        case let d where d > 0 && d < lowDelayThreshold:
             return delayColors.low
-        } else if delay < mediumDelayThreshold {
+        case let d where d >= lowDelayThreshold && d < mediumDelayThreshold:
             return delayColors.medium
-        } else {
+        default:
             return delayColors.high
         }
     }
@@ -2158,6 +2185,26 @@ struct DelayRingChart: View {
                         .scaledToFit()
                         .frame(width: size - strokeWidth * 2 - 12, height: size - strokeWidth * 2 - 12)
                 }
+            } else if group.type == "Smart" {
+                // Smart 代理组的特殊图标显示
+                ZStack {
+                    Circle()
+                        .fill(Color(.systemBackground).opacity(colorScheme == .dark ? 0.7 : 0.9))
+                        .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 0)
+                    
+                    if #available(iOS 18.0, *) {
+                        Image(systemName: "apple.intelligence")
+                            .font(.system(size: size / 3, weight: .medium))
+                            .foregroundStyle(.blue)
+                            .transition(.opacity)
+                    } else {
+                        Image(systemName: "wand.and.rays.inverse")
+                            .font(.system(size: size / 3, weight: .medium))
+                            .foregroundStyle(.blue)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: size - strokeWidth * 2 - 4, height: size - strokeWidth * 2 - 4)
             } else if showDelayRing {
                 // 显示当前选中节点的延迟
                 ZStack {
@@ -2203,13 +2250,16 @@ struct SelectedNodeHeader: View {
     
     // 计算延迟颜色
     private var delayColor: Color {
-        if nodeDelay == 0 {
+        switch nodeDelay {
+        case -1:
+            return DelayColor.unknown
+        case 0:
             return DelayColor.disconnected
-        } else if nodeDelay < lowDelayThreshold {
+        case let d where d > 0 && d < lowDelayThreshold:
             return DelayColor.low
-        } else if nodeDelay < mediumDelayThreshold {
+        case let d where d >= lowDelayThreshold && d < mediumDelayThreshold:
             return DelayColor.medium
-        } else {
+        default:
             return DelayColor.high
         }
     }
@@ -2312,8 +2362,18 @@ struct SelectedNodeHeader: View {
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(delayColor)
                         )
-                } else {
+                } else if nodeDelay == 0 {
                     Text("超时")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(delayColor)
+                        )
+                } else {
+                    Text("未知")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.white)
                         .padding(.horizontal, 8)

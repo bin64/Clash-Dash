@@ -64,5 +64,3 @@ Clash Dash **不会收集任何用户数据**。具体来说：
 如果您在使用过程中遇到任何问题，欢迎加入 Telegram 群组进行交流：
 [Clash Dash iOS 交流群](https://t.me/Clash_Dash_iOS)
 
-
-[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")

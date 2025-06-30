@@ -31,6 +31,7 @@ struct CompactGroupCard: View {
     }
     
     // Add separate function for sorting
+    // 排序优先级：有效延迟 > 超时(0) > 无延迟信息(-1)
     private func getSortedNodes() -> [String] {
         // First separate special nodes and normal nodes
         let specialNodes = ["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"]
@@ -48,17 +49,37 @@ struct CompactGroupCard: View {
             sortedNodes.sort { node1, node2 in
                 let delay1 = viewModel.getNodeDelay(nodeName: node1)
                 let delay2 = viewModel.getNodeDelay(nodeName: node2)
-                if delay1 == 0 { return false }
-                if delay2 == 0 { return true }
-                return delay1 < delay2
+                
+                // 优先级排序：有效延迟 > 超时 > 无延迟信息
+                if delay1 > 0 && delay2 <= 0 { return true }
+                if delay1 <= 0 && delay2 > 0 { return false }
+                if delay1 == 0 && delay2 == -1 { return true }
+                if delay1 == -1 && delay2 == 0 { return false }
+                
+                // 两者都是有效延迟，按延迟大小排序
+                if delay1 > 0 && delay2 > 0 {
+                    return delay1 < delay2
+                }
+                
+                return false // 两者都是无效值时保持原顺序
             }
         case .latencyDesc:
             sortedNodes.sort { node1, node2 in
                 let delay1 = viewModel.getNodeDelay(nodeName: node1)
                 let delay2 = viewModel.getNodeDelay(nodeName: node2)
-                if delay1 == 0 { return false }
-                if delay2 == 0 { return true }
-                return delay1 > delay2
+                
+                // 优先级排序：有效延迟 > 超时 > 无延迟信息
+                if delay1 > 0 && delay2 <= 0 { return true }
+                if delay1 <= 0 && delay2 > 0 { return false }
+                if delay1 == 0 && delay2 == -1 { return true }
+                if delay1 == -1 && delay2 == 0 { return false }
+                
+                // 两者都是有效延迟，按延迟大小倒序排序
+                if delay1 > 0 && delay2 > 0 {
+                    return delay1 > delay2
+                }
+                
+                return false // 两者都是无效值时保持原顺序
             }
         case .nameAsc:
             sortedNodes.sort { $0 < $1 }
@@ -80,7 +101,7 @@ struct CompactGroupCard: View {
                 if nodeName == "DIRECT" || nodeName == "REJECT" {
                     return true
                 }
-                return viewModel.getNodeDelay(nodeName: nodeName) != 0
+                return viewModel.getNodeDelay(nodeName: nodeName) > 0
             }
         }
         
@@ -165,6 +186,16 @@ struct CompactGroupCard: View {
                                     Image(systemName: "arrow.triangle.branch")
                                         .foregroundStyle(.blue)
                                         .font(.caption2)
+                                } else if group.type == "Smart" {
+                                    if #available(iOS 18.0, *) {
+                                        Image(systemName: "apple.intelligence")
+                                            .foregroundStyle(.blue)
+                                            .font(.caption2)
+                                    } else {
+                                        Image(systemName: "wand.and.rays.inverse")
+                                            .foregroundStyle(.blue)
+                                            .font(.caption2)
+                                    }
                                 }
                             }
 

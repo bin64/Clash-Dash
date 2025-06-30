@@ -38,6 +38,9 @@ struct ProxyNodeRow: View {
             } else if delay == 0 {
                 Image(systemName: "xmark")
                     .foregroundColor(.red)
+            } else {
+                Image(systemName: "questionmark")
+                    .foregroundColor(.secondary)
             }
         }
         .padding(.horizontal, 16)
