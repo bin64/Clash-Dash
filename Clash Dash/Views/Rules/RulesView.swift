@@ -135,8 +135,11 @@ struct RulesView: View {
                     .opacity(viewModel.isRefreshingAll ? 0.6 : 1.0)
                     .animation(.easeInOut, value: viewModel.isRefreshingAll)
                     .padding(.trailing, 16)
-                    .padding(.bottom, floatingTabBarVisible ? 154 : 80)  // 给搜索按钮留出空间，考虑浮动标签栏
+                    .padding(.bottom, floatingTabBarVisible ? 168 : 80)  // 给搜索按钮留出空间，考虑浮动标签栏
                     .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
+                    .onChange(of: floatingTabBarVisible) { newValue in
+                        print("🔄 更新全部按钮 - 浮动标签栏可见性变化: \(newValue)")
+                    }
                 }
             }
         }
@@ -168,8 +171,11 @@ struct RulesView: View {
             }
         }
         .padding(.trailing, 16)
-        .padding(.bottom, floatingTabBarVisible ? 90 : 16)
+        .padding(.bottom, floatingTabBarVisible ? 104 : 16)
         .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
+        .onChange(of: floatingTabBarVisible) { newValue in
+            print("🔍 搜索按钮 - 浮动标签栏可见性变化: \(newValue)")
+        }
     }
 }
 

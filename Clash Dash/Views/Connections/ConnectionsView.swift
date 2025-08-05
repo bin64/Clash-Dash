@@ -756,7 +756,7 @@ struct ConnectionsView: View {
             menuButtons
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
-                .padding(.bottom, floatingTabBarVisible ? 90 : 16)
+                .padding(.bottom, floatingTabBarVisible ? 104 : 16)
                 .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
         }
         .sheet(item: $selectedConnection) { connection in

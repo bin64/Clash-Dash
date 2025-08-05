@@ -98,8 +98,8 @@ struct ServerDetailView: View {
                     .offset(y: isTabBarVisible ? 0 : 100)
                     .animation(.easeInOut(duration: 0.3), value: isTabBarVisible)
                 }
-                .environment(\.floatingTabBarVisible, isTabBarVisible)
             }
+            .environment(\.floatingTabBarVisible, isTabBarVisible)
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .simultaneousGesture(
@@ -285,9 +285,11 @@ struct ServerDetailView: View {
             if translationY < -threshold {
                 // Dragging up (content scrolling down) - hide tab bar
                 isTabBarVisible = false
+                print("📱 ServerDetailView - 隐藏浮动标签栏")
             } else if translationY > threshold {
                 // Dragging down (content scrolling up) - show tab bar
                 isTabBarVisible = true
+                print("📱 ServerDetailView - 显示浮动标签栏")
             }
         }
     }
