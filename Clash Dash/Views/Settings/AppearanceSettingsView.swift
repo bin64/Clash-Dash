@@ -26,6 +26,7 @@ struct AppearanceSettingsView: View {
     @AppStorage("mediumDelayThreshold") private var mediumDelayThreshold = 500
     @AppStorage("widgetDefaultServer") private var widgetDefaultServer: String = ""
     @AppStorage("showDelayRingChart") private var showDelayRingChart = false
+    @AppStorage("useFloatingTabs") private var useFloatingTabs = false
     @State private var lowDelaySliderValue: Double = 0
     @State private var mediumDelaySliderValue: Double = 0
     @StateObject private var locationManager = LocationManager()
@@ -52,6 +53,8 @@ struct AppearanceSettingsView: View {
                 if proxyViewStyle == .zash {
                     Toggle("显示延迟环形图", isOn: $showDelayRingChart)
                 }
+                
+                Toggle("使用浮动标签页", isOn: $useFloatingTabs)
 
                 NavigationLink {
                     OverviewCardSettingsView()

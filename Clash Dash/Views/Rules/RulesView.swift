@@ -5,6 +5,7 @@ struct RulesView: View {
     @StateObject private var viewModel: RulesViewModel
     @State private var selectedTab = RuleTab.rules
     @State private var showSearch = false
+    @Environment(\.floatingTabBarVisible) private var floatingTabBarVisible
     
     init(server: ClashServer) {
         self.server = server
@@ -134,7 +135,8 @@ struct RulesView: View {
                     .opacity(viewModel.isRefreshingAll ? 0.6 : 1.0)
                     .animation(.easeInOut, value: viewModel.isRefreshingAll)
                     .padding(.trailing, 16)
-                    .padding(.bottom, 80)  // 给搜索按钮留出空间
+                    .padding(.bottom, floatingTabBarVisible ? 154 : 80)  // 给搜索按钮留出空间，考虑浮动标签栏
+                    .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
                 }
             }
         }
@@ -166,7 +168,8 @@ struct RulesView: View {
             }
         }
         .padding(.trailing, 16)
-        .padding(.bottom, 16)
+        .padding(.bottom, floatingTabBarVisible ? 90 : 16)
+        .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
     }
 }
 

@@ -10,6 +10,7 @@ struct ConnectionsView: View {
     @State private var showMenu = false
     @State private var showClientTagSheet = false
     @State private var selectedConnection: ClashConnection?
+    @Environment(\.floatingTabBarVisible) private var floatingTabBarVisible
     
     // 获取默认排序设置
     @AppStorage("defaultConnectionSortOption") private var defaultSortOption = DefaultConnectionSortOption.startTime
@@ -753,7 +754,10 @@ struct ConnectionsView: View {
             }
             
             menuButtons
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, floatingTabBarVisible ? 90 : 16)
+                .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
         }
         .sheet(item: $selectedConnection) { connection in
             NavigationStack {

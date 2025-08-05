@@ -18,12 +18,15 @@ struct ServerDetailView: View {
     @EnvironmentObject private var bindingManager: WiFiBindingManager
     @StateObject private var subscriptionManager: SubscriptionManager
     @StateObject private var connectivityViewModel = ConnectivityViewModel()
+    @AppStorage("useFloatingTabs") private var useFloatingTabs = false
+    @State private var isTabBarVisible = true
+    @State private var lastScrollOffset: CGFloat = 0
     
     init(server: ClashServer) {
         self.server = server
         self._subscriptionManager = StateObject(wrappedValue: SubscriptionManager(server: server))
         
-        // 设置 UITabBar 的外观
+        // 设置 UITabBar 的外观 (仅在不使用浮动标签页时)
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = UIColor.systemBackground
@@ -33,6 +36,127 @@ struct ServerDetailView: View {
     }
     
     var body: some View {
+        if useFloatingTabs {
+            floatingTabsView
+        } else {
+            fixedTabsView
+        }
+    }
+    
+    @ViewBuilder
+    private var floatingTabsView: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // 背景内容
+                Group {
+                    switch selectedTab {
+                    case 0:
+                        OverviewTab(
+                            server: server, 
+                            monitor: networkMonitor, 
+                            selectedTab: $selectedTab, 
+                            settingsViewModel: settingsViewModel,
+                            connectivityViewModel: connectivityViewModel
+                        )
+                        .onAppear {
+                            HapticManager.shared.impact(.light)
+                            settingsViewModel.fetchConfig(server: server) 
+                            connectivityViewModel.setupWithServer(server, httpPort: settingsViewModel.httpPort, settingsViewModel: settingsViewModel)
+                            print("⚙️ ServerDetailView - 初始服务器设置, 端口: \(settingsViewModel.httpPort)")
+                        }
+                    case 1:
+                        ProxyView(server: server)
+                            .onAppear {
+                                HapticManager.shared.impact(.light)
+                            }
+                    case 2:
+                        RulesView(server: server)
+                            .onAppear {
+                                HapticManager.shared.impact(.light)
+                            }
+                    case 3:
+                        ConnectionsView(server: server)
+                            .onAppear {
+                                HapticManager.shared.impact(.light)
+                            }
+                    case 4:
+                        MoreView(server: server)
+                            .onAppear {
+                                HapticManager.shared.impact(.light)
+                            }
+                    default:
+                        EmptyView()
+                    }
+                }
+                
+                // 浮动标签栏
+                VStack {
+                    Spacer()
+                    FloatingTabBar(selectedTab: $selectedTab)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, geometry.safeAreaInsets.bottom + 20)
+                    .offset(y: isTabBarVisible ? 0 : 100)
+                    .animation(.easeInOut(duration: 0.3), value: isTabBarVisible)
+                }
+                .environment(\.floatingTabBarVisible, isTabBarVisible)
+            }
+        }
+        .ignoresSafeArea(.container, edges: .bottom)
+        .simultaneousGesture(
+            DragGesture()
+                .onChanged { value in
+                    handleDragGesture(value)
+                }
+        )
+        .navigationTitle(server.name.isEmpty ? "\(server.openWRTUrl ?? server.url):\(server.openWRTPort ?? server.port)" : server.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if server.isQuickLaunch {
+                ToolbarItem(placement: .principal) {
+                    HStack {
+                        Spacer()
+                            .frame(width: 25)
+                        Text(server.name.isEmpty ? "\(server.openWRTUrl ?? server.url):\(server.openWRTPort ?? server.port)" : server.name)
+                            .font(.headline)
+                        Image(systemName: "bolt.circle.fill")
+                            .foregroundColor(.yellow)
+                            .font(.subheadline)
+                    }
+                }
+            } else {
+                ToolbarItem(placement: .principal) {
+                    Text(server.name.isEmpty ? "\(server.openWRTUrl ?? server.url):\(server.openWRTPort ?? server.port)" : server.name)
+                        .font(.headline)
+                }
+            }
+        }
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Color(.systemBackground), for: .navigationBar)
+        .onAppear {
+            viewModel.serverViewModel.setBingingManager(bindingManager)
+            if selectedTab == 0 {
+                networkMonitor.startMonitoring(server: server)
+            }
+        }
+        .onDisappear {
+            networkMonitor.stopMonitoring()
+        }
+        .onChange(of: selectedTab) { newTab in
+            if newTab == 0 {
+                networkMonitor.startMonitoring(server: server)
+            } else {
+                networkMonitor.stopMonitoring()
+            }
+        }
+        .onChange(of: settingsViewModel.httpPort) { newPort in
+            print("📣 HTTP端口已更新: \(newPort)")
+            connectivityViewModel.setupWithServer(server, httpPort: newPort, settingsViewModel: settingsViewModel)
+            print("🔄 已更新ConnectionViewModel中的端口: \(newPort)")
+        }
+    }
+    
+    @ViewBuilder
+    private var fixedTabsView: some View {
         TabView(selection: $selectedTab) {
             // 概览标签页
             OverviewTab(
@@ -44,10 +168,7 @@ struct ServerDetailView: View {
             )
             .onAppear {
                 HapticManager.shared.impact(.light)
-                // 首先获取配置
                 settingsViewModel.fetchConfig(server: server) 
-                
-                // 初始设置端口，传入settingsViewModel以支持fallback到mixedPort
                 connectivityViewModel.setupWithServer(server, httpPort: settingsViewModel.httpPort, settingsViewModel: settingsViewModel)
                 print("⚙️ ServerDetailView - 初始服务器设置, 端口: \(settingsViewModel.httpPort)")
             }
@@ -122,7 +243,6 @@ struct ServerDetailView: View {
         .toolbarBackground(Color(.systemBackground), for: .navigationBar)
         .onAppear {
             viewModel.serverViewModel.setBingingManager(bindingManager)
-            // 如果当前是概览标签页，启动监控
             if selectedTab == 0 {
                 networkMonitor.startMonitoring(server: server)
             }
@@ -131,14 +251,12 @@ struct ServerDetailView: View {
             networkMonitor.stopMonitoring()
         }
         .onChange(of: selectedTab) { newTab in
-            // 当标签页切换时，根据是否是概览标签页来启动或停止监控
             if newTab == 0 {
                 networkMonitor.startMonitoring(server: server)
             } else {
                 networkMonitor.stopMonitoring()
             }
         }
-        // 监听HTTP端口变化
         .onChange(of: settingsViewModel.httpPort) { newPort in
             print("📣 HTTP端口已更新: \(newPort)")
             connectivityViewModel.setupWithServer(server, httpPort: newPort, settingsViewModel: settingsViewModel)
@@ -157,6 +275,78 @@ struct ServerDetailView: View {
                 showingModeChangeSuccess = false
             }
         }
+    }
+    
+    private func handleDragGesture(_ value: DragGesture.Value) {
+        let threshold: CGFloat = 20
+        let translationY = value.translation.height
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            if translationY < -threshold {
+                // Dragging up (content scrolling down) - hide tab bar
+                isTabBarVisible = false
+            } else if translationY > threshold {
+                // Dragging down (content scrolling up) - show tab bar
+                isTabBarVisible = true
+            }
+        }
+    }
+}
+
+// Environment key for floating tab bar visibility
+struct FloatingTabBarVisibleKey: EnvironmentKey {
+    static let defaultValue: Bool = true
+}
+
+extension EnvironmentValues {
+    var floatingTabBarVisible: Bool {
+        get { self[FloatingTabBarVisibleKey.self] }
+        set { self[FloatingTabBarVisibleKey.self] = newValue }
+    }
+}
+
+struct FloatingTabBar: View {
+    @Binding var selectedTab: Int
+    
+    private let tabs = [
+        (index: 0, title: "概览", icon: "chart.line.uptrend.xyaxis"),
+        (index: 1, title: "代理", icon: "globe"),
+        (index: 2, title: "规则", icon: "ruler"),
+        (index: 3, title: "连接", icon: "link"),
+        (index: 4, title: "更多", icon: "ellipsis")
+    ]
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(tabs, id: \.index) { tab in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedTab = tab.index
+                    }
+                    HapticManager.shared.impact(.light)
+                }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(selectedTab == tab.index ? .accentColor : .secondary)
+                        
+                        Text(tab.title)
+                            .font(.caption2)
+                            .foregroundColor(selectedTab == tab.index ? .accentColor : .secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+        )
     }
 }
 
