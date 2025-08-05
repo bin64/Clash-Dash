@@ -134,7 +134,7 @@ struct SubscriptionInfoCard: View {
                                                     getProgressColor(subscription.percentageUsed)
                                                         .opacity(0.8)
                                                 )
-                                                .frame(width: geometry.size.width * CGFloat(subscription.remainingTraffic / subscription.totalTraffic))
+                                                .frame(width: max(0, min(geometry.size.width, geometry.size.width * CGFloat(subscription.usedTraffic / subscription.totalTraffic))))
                                         }
                                     }
                                 }
@@ -364,7 +364,7 @@ struct SubscriptionInfoCard: View {
                                             getProgressColor(subscription.percentageUsed)
                                                 .gradient
                                         )
-                                        .frame(width: geometry.size.width * CGFloat(subscription.remainingTraffic / subscription.totalTraffic))
+                                        .frame(width: max(0, min(geometry.size.width, geometry.size.width * CGFloat(subscription.usedTraffic / subscription.totalTraffic))))
                                 }
                             }
                             .frame(height: 8)

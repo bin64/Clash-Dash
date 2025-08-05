@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 struct OpenClashConfigView: View {
     @Environment(\.dismiss) private var dismiss
@@ -17,6 +19,15 @@ struct OpenClashConfigView: View {
     @State private var editingConfig: OpenClashConfig?
     @State private var showingEditAlert = false
     @State private var configToEdit: OpenClashConfig?
+    
+    // 上传相关状态
+    @State private var showingFilePicker = false
+    @State private var isUploading = false
+    @State private var uploadProgress: String = ""
+    @State private var showingUploadConfirmation = false
+    @State private var selectedFileURL: URL?
+    @State private var selectedFileName: String = ""
+    @State private var selectedFileSize: String = ""
     
     var body: some View {
         NavigationStack {
@@ -94,7 +105,16 @@ struct OpenClashConfigView: View {
                     Button("关闭", action: { dismiss() })
                 }
                 
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    // 上传按钮
+                    Button {
+                        showingFilePicker = true
+                    } label: {
+                        Image(systemName: "arrow.up.doc")
+                    }
+                    .disabled(isUploading)
+                    
+                    // 刷新按钮
                     Button {
                         Task {
                             await loadConfigs()
@@ -105,6 +125,7 @@ struct OpenClashConfigView: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .disabled(isUploading)
                 }
             }
         }
@@ -177,6 +198,46 @@ struct OpenClashConfigView: View {
             }
         } message: {
             Text(errorMessage)
+        }
+        .alert("确定要上传以下文件吗？", isPresented: $showingUploadConfirmation) {
+            Button("取消", role: .cancel) {
+                selectedFileURL = nil
+                selectedFileName = ""
+                selectedFileSize = ""
+            }
+            Button("确认上传", role: .destructive) {
+                if let url = selectedFileURL {
+                    handleFileUpload(url)
+                }
+                selectedFileURL = nil
+                selectedFileName = ""
+                selectedFileSize = ""
+            }
+        } message: {
+            Text("文件名：\(selectedFileName)\n文件大小：\(selectedFileSize)")
+        }
+        .sheet(isPresented: $showingFilePicker) {
+            DocumentPicker(
+                allowedTypes: [.yaml, .yml],
+                onFileSelected: { url in
+                    handleFileSelection(url)
+                }
+            )
+        }
+        .overlay {
+            if isUploading {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                    Text(uploadProgress)
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(24)
+                .background(Color(.systemBackground).opacity(0.95))
+                .cornerRadius(16)
+                .shadow(radius: 10)
+            }
         }
     }
     
@@ -311,6 +372,128 @@ struct OpenClashConfigView: View {
                 
                 HapticManager.shared.notification(.error)
             }
+        }
+    }
+    
+    // 处理文件选择
+    private func handleFileSelection(_ url: URL) {
+        // 添加触觉反馈
+        HapticManager.shared.impact(.light)
+        
+        // 检查文件访问权限
+        guard url.startAccessingSecurityScopedResource() else {
+            errorMessage = "无法访问所选文件"
+            showError = true
+            return
+        }
+        
+        defer {
+            url.stopAccessingSecurityScopedResource()
+        }
+        
+        do {
+            // 获取文件信息
+            let fileName = url.lastPathComponent
+            
+            // 验证文件格式
+            guard fileName.lowercased().hasSuffix(".yaml") || fileName.lowercased().hasSuffix(".yml") else {
+                errorMessage = "只支持上传 .yaml 或 .yml 格式的配置文件"
+                showError = true
+                return
+            }
+            
+            // 获取文件大小
+            let fileAttributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let fileSize = fileAttributes[.size] as? Int64 ?? 0
+            
+            // 检查文件大小限制
+            let maxSize: Int64 = 10 * 1024 * 1024  // 10MB
+            guard fileSize <= maxSize else {
+                errorMessage = "文件大小超过限制（最大 10MB）"
+                showError = true
+                return
+            }
+            
+            // 格式化文件大小
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useKB, .useMB]
+            formatter.countStyle = .file
+            let fileSizeString = formatter.string(fromByteCount: fileSize)
+            
+            // 保存文件信息并显示确认对话框
+            selectedFileURL = url
+            selectedFileName = fileName
+            selectedFileSize = fileSizeString
+            showingUploadConfirmation = true
+            
+        } catch {
+            errorMessage = "无法读取文件信息: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+    
+    // 处理文件上传
+    private func handleFileUpload(_ url: URL) {
+        Task {
+            await uploadConfigFile(url)
+        }
+    }
+    
+    @MainActor
+    private func uploadConfigFile(_ url: URL) async {
+        guard !isUploading else { return }
+        
+        isUploading = true
+        uploadProgress = "正在读取文件..."
+        
+        defer {
+            isUploading = false
+            uploadProgress = ""
+        }
+        
+        do {
+            // 检查文件访问权限
+            guard url.startAccessingSecurityScopedResource() else {
+                errorMessage = "无法访问所选文件"
+                showError = true
+                return
+            }
+            
+            defer {
+                url.stopAccessingSecurityScopedResource()
+            }
+            
+            // 读取文件数据
+            uploadProgress = "正在读取文件内容..."
+            let fileData = try Data(contentsOf: url)
+            let fileName = url.lastPathComponent
+            
+            uploadProgress = "正在上传配置文件..."
+            
+            // 确定包名
+            let packageName = server.luciPackage == .openClash ? "openclash" : "mihomoTProxy"
+            
+            // 上传文件
+            try await viewModel.uploadConfigFile(
+                server,
+                fileData: fileData,
+                fileName: fileName,
+                packageName: packageName
+            )
+            
+            uploadProgress = "上传完成，正在刷新列表..."
+            
+            // 重新加载配置列表
+            await loadConfigs()
+            
+            // 添加成功触觉反馈
+            HapticManager.shared.notification(.success)
+            
+        } catch {
+            errorMessage = "上传失败: \(error.localizedDescription)"
+            showError = true
+            // 添加失败触觉反馈
+            HapticManager.shared.notification(.error)
         }
     }
 }
@@ -689,4 +872,42 @@ private extension Date {
             return formatter.string(from: self)
         }
     }
+}
+
+// MARK: - DocumentPicker
+struct DocumentPicker: UIViewControllerRepresentable {
+    let allowedTypes: [UTType]
+    let onFileSelected: (URL) -> Void
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: allowedTypes)
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onFileSelected: onFileSelected)
+    }
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onFileSelected: (URL) -> Void
+        
+        init(onFileSelected: @escaping (URL) -> Void) {
+            self.onFileSelected = onFileSelected
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            onFileSelected(url)
+        }
+    }
+}
+
+// MARK: - UTType Extensions
+extension UTType {
+    static let yaml = UTType(filenameExtension: "yaml") ?? UTType.data
+    static let yml = UTType(filenameExtension: "yml") ?? UTType.data
 } 

@@ -635,7 +635,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
                     var statusRequest = URLRequest(url: url)
                     statusRequest.httpMethod = "POST"
                     statusRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    statusRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+                    statusRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
                     
                     let statusCommand: [String: Any] = [
                         "method": "exec",
@@ -661,7 +661,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
                     var statusRequest = URLRequest(url: url)
                     statusRequest.httpMethod = "POST"
                     statusRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    statusRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+                    statusRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
                     
                     let statusCommand: [String: Any] = [
                         "method": "exec",
@@ -801,7 +801,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         var fsRequest = URLRequest(url: fsURL)
         fsRequest.httpMethod = "POST"
         fsRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        fsRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        fsRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         let fsCommand: [String: Any] = [
             "method": "glob",
@@ -827,7 +827,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         var sysRequest = URLRequest(url: sysURL)
         sysRequest.httpMethod = "POST"
         sysRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        sysRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        sysRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         let sysCommand: [String: Any] = [
             "method": "exec",
@@ -855,7 +855,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             var statRequest = URLRequest(url: fsURL)
             statRequest.httpMethod = "POST"
             statRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            statRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+            statRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
             
             let statCommand: [String: Any] = [
                 "method": "stat",
@@ -874,7 +874,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             var checkRequest = URLRequest(url: sysURL)
             checkRequest.httpMethod = "POST"
             checkRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            checkRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+            checkRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
             
             let checkCommand: [String: Any] = [
                 "method": "exec",
@@ -896,7 +896,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             }
             
             var subRequest = URLRequest(url: subURL)
-            subRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+            subRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
             
             let subscription: OpenClashConfig.SubscriptionInfo?
             do {
@@ -967,7 +967,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             var request = URLRequest(url: switchURL)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+            request.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
             request.httpBody = "config_name=\(configFilename)".data(using: .utf8)
             
             let session = makeURLSession(for: server)
@@ -1085,7 +1085,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        request.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         // 根据包名和是否为订阅构建文件路径
         let configPath: String
@@ -1171,7 +1171,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         var request = URLRequest(url: url)
         request.httpMethod = "POST" 
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        request.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         let command: [String: Any] = [
             "method": "exec",
@@ -1203,7 +1203,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         var statRequest = URLRequest(url: fsURL)
         statRequest.httpMethod = "POST"
         statRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        statRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        statRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         let statCommand: [String: Any] = [
             "method": "stat",
@@ -1273,7 +1273,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             var restartRequest = URLRequest(url: restartURL)
             restartRequest.httpMethod = "POST"
             restartRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            restartRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+            restartRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
             
             let restartCommand: [String: Any] = [
                 "method": "exec",
@@ -1308,7 +1308,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
                             }
                             
                             var logRequest = URLRequest(url: logURL)
-                            logRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+                            logRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
                             
                             let (logData, _) = try await session.data(for: logRequest)
                             let logResponse = try JSONDecoder().decode(StartLogResponse.self, from: logData)
@@ -1339,7 +1339,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
                             var statusRequest = URLRequest(url: restartURL)
                             statusRequest.httpMethod = "POST"
                             statusRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                            statusRequest.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+                            statusRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
                             
                             let statusCommand: [String: Any] = [
                                 "method": "exec",
@@ -1473,7 +1473,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        request.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         let command: [String: Any] = [
             "method": "exec",
@@ -1532,7 +1532,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+            request.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
             
             let command: [String: Any] = [
                 "method": "exec",
@@ -1817,7 +1817,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        request.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         let requestBody: [String: Any] = [
             "id": 1,
@@ -1873,5 +1873,302 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         
         let token = try await getAuthToken(server, username: username, password: password)
         return try await isUsingNikki(server, token: token)
+    }
+    
+    // 添加上传配置文件的方法
+    func uploadConfigFile(_ server: ClashServer, fileData: Data, fileName: String, packageName: String) async throws {
+        let scheme = server.openWRTUseSSL ? "https" : "http"
+        guard let openWRTUrl = server.openWRTUrl else {
+            throw NetworkError.invalidURL
+        }
+        let baseURL = "\(scheme)://\(openWRTUrl):\(server.openWRTPort ?? "80")"
+        
+        logger.info("📤 开始上传配置文件: \(fileName)")
+        
+        // 获取认证信息
+        guard let username = server.openWRTUsername,
+              let password = server.openWRTPassword else {
+            logger.error("❌ 未找到认证信息")
+            throw NetworkError.unauthorized(message: "未设置 OpenWRT 用户名或密码")
+        }
+        
+        // 获取认证 token
+        let token = try await getAuthToken(server, username: username, password: password)
+        
+        if packageName == "openclash" {
+            // OpenClash 使用不同的上传API
+            try await uploadOpenClashConfig(server, token: token, fileData: fileData, fileName: fileName, baseURL: baseURL)
+        } else {
+            // MihomoTProxy 使用 cgi-upload
+            try await uploadMihomoConfig(server, token: token, fileData: fileData, fileName: fileName, baseURL: baseURL)
+        }
+    }
+    
+    // OpenClash 上传方法
+    private func uploadOpenClashConfig(_ server: ClashServer, token: String, fileData: Data, fileName: String, baseURL: String) async throws {
+        // 1. 首先获取配置页面以提取动态 token
+        guard let configPageURL = URL(string: "\(baseURL)/cgi-bin/luci/admin/services/openclash/config") else {
+            throw NetworkError.invalidURL
+        }
+        
+        logger.info("📍 OpenClash 获取配置页面: \(configPageURL)")
+        
+        // 创建获取配置页面的请求
+        var pageRequest = URLRequest(url: configPageURL)
+        pageRequest.httpMethod = "GET"
+        pageRequest.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7", forHTTPHeaderField: "Accept")
+        pageRequest.setValue("en-US,en;q=0.9,zh-CN;q=0.8,zh-TW;q=0.7,zh;q=0.6", forHTTPHeaderField: "Accept-Language")
+        pageRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        pageRequest.setValue("keep-alive", forHTTPHeaderField: "Connection")
+        pageRequest.setValue("1", forHTTPHeaderField: "DNT")
+        pageRequest.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        pageRequest.setValue("document", forHTTPHeaderField: "Sec-Fetch-Dest")
+        pageRequest.setValue("navigate", forHTTPHeaderField: "Sec-Fetch-Mode")
+        pageRequest.setValue("same-origin", forHTTPHeaderField: "Sec-Fetch-Site")
+        pageRequest.setValue("?1", forHTTPHeaderField: "Sec-Fetch-User")
+        pageRequest.setValue("1", forHTTPHeaderField: "Upgrade-Insecure-Requests")
+        pageRequest.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        
+        // 设置 Cookie
+        let cookieName = server.openWRTUseSSL ? "sysauth_https" : "sysauth_http"
+        pageRequest.setValue("\(cookieName)=\(token)", forHTTPHeaderField: "Cookie")
+        
+        let session = makeURLSession(for: server)
+        let (pageData, pageResponse) = try await session.data(for: pageRequest)
+        
+        guard let httpPageResponse = pageResponse as? HTTPURLResponse,
+              httpPageResponse.statusCode == 200 else {
+            logger.error("❌ 获取配置页面失败")
+            throw NetworkError.serverError((pageResponse as? HTTPURLResponse)?.statusCode ?? 500)
+        }
+        
+        // 2. 解析 HTML 内容，提取动态 token
+        guard let htmlContent = String(data: pageData, encoding: .utf8) else {
+            logger.error("❌ 无法解析 HTML 内容")
+            throw NetworkError.invalidResponse(message: "无法解析 HTML 内容")
+        }
+        
+        logger.debug("📄 获取到 HTML 内容长度: \(htmlContent.count)")
+        
+        // 提取 JavaScript 中的 token
+        let dynamicToken = try extractTokenFromHTML(htmlContent)
+        logger.info("🔑 提取到动态 token: \(dynamicToken)")
+        
+        // 3. 使用动态 token 进行上传
+        guard let uploadURL = URL(string: "\(baseURL)/cgi-bin/luci/admin/services/openclash/config") else {
+            throw NetworkError.invalidURL
+        }
+        
+        logger.info("📤 OpenClash 开始上传到: \(uploadURL)")
+        
+        // 创建 multipart/form-data 请求
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "POST"
+        
+        // 生成边界字符串
+        let boundary = "----WebKitFormBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        // 设置 Cookie
+        request.setValue("\(cookieName)=\(token)", forHTTPHeaderField: "Cookie")
+        
+        // 构建 multipart 数据
+        var body = Data()
+        
+        // 添加动态 token 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"token\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(dynamicToken)\r\n".data(using: .utf8)!)
+        
+        // 添加 cbi.submit 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"cbi.submit\"\r\n\r\n".data(using: .utf8)!)
+        body.append("1\r\n".data(using: .utf8)!)
+        
+        // 添加 file_type 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file_type\"\r\n\r\n".data(using: .utf8)!)
+        body.append("config\r\n".data(using: .utf8)!)
+        
+        // 添加 ulfile 字段（文件数据）
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"ulfile\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/x-yaml\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        // 添加 upload 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"upload\"\r\n\r\n".data(using: .utf8)!)
+        body.append("上传\r\n".data(using: .utf8)!)
+        
+        // 结束边界
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        // 发送请求
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            logger.error("❌ 无效的响应类型")
+            throw NetworkError.invalidResponse(message: "无效的响应类型")
+        }
+        
+        logger.info("📥 OpenClash 上传响应状态码: \(httpResponse.statusCode)")
+        
+        // if let responseData = String(data: data, encoding: .utf8) {
+        //     logger.info("📥 OpenClash 上传响应内容: \(responseData)")
+        // }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            logger.info("✅ OpenClash 配置文件上传成功")
+        case 401:
+            logger.error("❌ 认证失败")
+            throw NetworkError.unauthorized(message: "认证失败，请检查用户名和密码")
+        case 413:
+            logger.error("❌ 文件过大")
+            throw NetworkError.invalidResponse(message: "文件过大，无法上传")
+        case 415:
+            logger.error("❌ 不支持的文件类型")
+            throw NetworkError.invalidResponse(message: "不支持的文件类型")
+        default:
+            logger.error("❌ OpenClash 上传失败，状态码: \(httpResponse.statusCode)")
+            throw NetworkError.serverError(httpResponse.statusCode)
+        }
+    }
+    
+    // 从 HTML 内容中提取动态 token
+    private func extractTokenFromHTML(_ htmlContent: String) throws -> String {
+        logger.debug("🔍 开始提取动态 token")
+        
+        // 查找包含 LuCI 初始化的 script 标签
+        let patterns = [
+            #""token":\s*"([^"]+)""#,  // 匹配 "token": "value"
+            #"token":\s*"([^"]+)""#,   // 匹配 token: "value"
+            #""token"\s*:\s*"([^"]+)""# // 另一种匹配方式
+        ]
+        
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                let range = NSRange(location: 0, length: htmlContent.count)
+                if let match = regex.firstMatch(in: htmlContent, options: [], range: range) {
+                    if let tokenRange = Range(match.range(at: 1), in: htmlContent) {
+                        let token = String(htmlContent[tokenRange])
+                        logger.debug("✅ 成功提取到 token: \(token)")
+                        return token
+                    }
+                }
+            }
+        }
+        
+        // 如果正则表达式失败，尝试更简单的字符串查找
+        logger.debug("⚠️ 正则表达式提取失败，尝试字符串查找")
+        
+        // 查找 "token": " 开始的位置
+        if let tokenStart = htmlContent.range(of: "\"token\": \"") {
+            let afterToken = htmlContent[tokenStart.upperBound...]
+            if let tokenEnd = afterToken.range(of: "\"") {
+                let token = String(afterToken[..<tokenEnd.lowerBound])
+                logger.debug("✅ 字符串查找成功提取到 token: \(token)")
+                return token
+            }
+        }
+        
+        // 再尝试不带引号的版本
+        if let tokenStart = htmlContent.range(of: "token: \"") {
+            let afterToken = htmlContent[tokenStart.upperBound...]
+            if let tokenEnd = afterToken.range(of: "\"") {
+                let token = String(afterToken[..<tokenEnd.lowerBound])
+                logger.debug("✅ 备用字符串查找成功提取到 token: \(token)")
+                return token
+            }
+        }
+        
+        logger.error("❌ 无法从 HTML 中提取 token")
+        // logger.debug("HTML 内容片段: \(String(htmlContent.prefix(500)))")
+        throw NetworkError.invalidResponse(message: "无法从页面中提取动态 token")
+    }
+    
+    // MihomoTProxy 上传方法
+    private func uploadMihomoConfig(_ server: ClashServer, token: String, fileData: Data, fileName: String, baseURL: String) async throws {
+        // 检查是否使用 nikki
+        let isNikki = try await isUsingNikki(server, token: token)
+        let packagePrefix = isNikki ? "nikki" : "mihomo"
+        let targetPath = "/etc/\(packagePrefix)/profiles/\(fileName)"
+        
+        logger.info("📍 MihomoTProxy 上传目标路径: \(targetPath)")
+        
+        // 构建上传 URL
+        let timestamp = Int(Date().timeIntervalSince1970 * 1000)
+        guard let uploadURL = URL(string: "\(baseURL)/cgi-bin/cgi-upload?\(timestamp)") else {
+            throw NetworkError.invalidURL
+        }
+        
+        // 创建 multipart/form-data 请求
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "POST"
+        
+        // 生成边界字符串
+        let boundary = "----WebKitFormBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        // 构建 multipart 数据
+        var body = Data()
+        
+        // 添加 sessionid 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"sessionid\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(token)\r\n".data(using: .utf8)!)
+        
+        // 添加 filename 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"filename\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(targetPath)\r\n".data(using: .utf8)!)
+        
+        // 添加 filedata 字段
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"filedata\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/x-yaml\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        // 结束边界
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        // 发送请求
+        let session = makeURLSession(for: server)
+        let (data, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            logger.error("❌ 无效的响应类型")
+            throw NetworkError.invalidResponse(message: "无效的响应类型")
+        }
+        
+        logger.info("📥 MihomoTProxy 上传响应状态码: \(httpResponse.statusCode)")
+        
+        if let responseData = String(data: data, encoding: .utf8) {
+            logger.info("📥 MihomoTProxy 上传响应内容: \(responseData)")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            logger.info("✅ MihomoTProxy 配置文件上传成功")
+        case 401:
+            logger.error("❌ 认证失败")
+            throw NetworkError.unauthorized(message: "认证失败，请检查用户名和密码")
+        case 413:
+            logger.error("❌ 文件过大")
+            throw NetworkError.invalidResponse(message: "文件过大，无法上传")
+        case 415:
+            logger.error("❌ 不支持的文件类型")
+            throw NetworkError.invalidResponse(message: "不支持的文件类型")
+        default:
+            logger.error("❌ MihomoTProxy 上传失败，状态码: \(httpResponse.statusCode)")
+            throw NetworkError.serverError(httpResponse.statusCode)
+        }
     }
 } 

@@ -135,7 +135,7 @@ struct RestartServiceView: View {
                     }
                     
                     var logRequest = URLRequest(url: logURL)
-                    logRequest.setValue("sysauth_http=\(token); sysauth=\(token)", forHTTPHeaderField: "Cookie")
+                    logRequest.setValue("sysauth_http=\(token); sysauth_https=\(token); sysauth=\(token)", forHTTPHeaderField: "Cookie")
                     
                     // 对HTTPS连接始终使用支持自签名证书的会话
                     let session = server.openWRTUseSSL ? URLSession.secure : URLSession.shared
@@ -284,7 +284,7 @@ struct RestartServiceView: View {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("sysauth=\(token); sysauth_http=\(token)", forHTTPHeaderField: "Cookie")
+        request.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
         
         let requestBody: [String: Any] = [
             "id": 1,
