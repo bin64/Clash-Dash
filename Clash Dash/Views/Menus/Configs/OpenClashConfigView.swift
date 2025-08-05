@@ -226,17 +226,7 @@ struct OpenClashConfigView: View {
         }
         .overlay {
             if isUploading {
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                    Text(uploadProgress)
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-                .background(Color(.systemBackground).opacity(0.95))
-                .cornerRadius(16)
-                .shadow(radius: 10)
+                UploadingOverlayView(progress: uploadProgress)
             }
         }
     }
@@ -903,6 +893,74 @@ struct DocumentPicker: UIViewControllerRepresentable {
             guard let url = urls.first else { return }
             onFileSelected(url)
         }
+    }
+}
+
+// MARK: - UploadingOverlayView
+struct UploadingOverlayView: View {
+    let progress: String
+    
+    @State private var animationRotation: Double = 0
+    
+    var body: some View {
+        ZStack {
+            // 背景模糊效果
+            Color.black.opacity(0.2)
+                .ignoresSafeArea()
+            
+            // 精致的上传卡片
+            HStack(spacing: 16) {
+                // 简洁的旋转图标
+                ZStack {
+                    Circle()
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 2)
+                        .frame(width: 32, height: 32)
+                    
+                    Circle()
+                        .trim(from: 0, to: 0.7)
+                        .stroke(
+                            Color.blue,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                        )
+                        .frame(width: 32, height: 32)
+                        .rotationEffect(.degrees(animationRotation))
+                    
+                    Image(systemName: "arrow.up.doc")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+                .onAppear {
+                    withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                        animationRotation = 360
+                    }
+                }
+                
+                // 进度信息
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("上传中...")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    Text(progress)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.regularMaterial)
+                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+            )
+            .frame(maxWidth: 280)
+        }
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: progress)
     }
 }
 
