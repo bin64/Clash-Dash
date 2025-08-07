@@ -6,7 +6,6 @@ struct DetailContentView: View {
     @Binding var selectedSidebarItem: SidebarItem?
     @ObservedObject var settingsViewModel: SettingsViewModel
     @EnvironmentObject private var bindingManager: WiFiBindingManager
-    @State private var showingSourceCode = false
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -49,12 +48,6 @@ struct DetailContentView: View {
                     // 默认欢迎页面
                     welcomeView
                 }
-            }
-        }
-        .sheet(isPresented: $showingSourceCode) {
-            if let url = URL(string: "https://github.com/bin64/Clash-Dash") {
-                SafariWebView(url: url)
-                    .ignoresSafeArea()
             }
         }
     }
@@ -108,30 +101,16 @@ struct DetailContentView: View {
             }
             .frame(maxWidth: 400)
             
-            // 版本信息和源码
-            VStack(spacing: 12) {
-                Button {
-                    HapticManager.shared.impact(.light)
-                    showingSourceCode = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "chevron.left.forwardslash.chevron.right")
-                            .font(.body)
-                            .foregroundColor(.purple)
-                        
-                        Text("查看源码")
-                            .font(.body)
-                            .foregroundColor(.purple)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(Color.purple.opacity(0.1))
-                    .cornerRadius(20)
-                }
+            // 版本信息
+            VStack(spacing: 8) {
+                Text("版本信息")
+                    .font(.headline)
+                    .fontWeight(.medium)
                 
                 Text("Ver: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0") Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")")
                     .foregroundColor(.secondary)
                     .font(.footnote)
+                    .monospacedDigit()
             }
             
             Spacer()
@@ -150,6 +129,8 @@ struct DetailContentView: View {
         }
         .background(Color(.systemGroupedBackground))
     }
+    
+
 }
 
 /// 功能介绍卡片

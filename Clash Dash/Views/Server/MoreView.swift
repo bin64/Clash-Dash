@@ -386,7 +386,7 @@ struct MoreView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingWebView) {
+        .fullScreenCover(isPresented: $showingWebView) {
             ZStack {
                 Color(.systemBackground)
                     .ignoresSafeArea()

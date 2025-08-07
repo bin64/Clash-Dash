@@ -26,6 +26,7 @@ struct SidebarView: View {
     
     // 状态管理
     @State private var showHiddenServers = false
+    @State private var showingSourceCode = false
     
     // 私有计算属性
     private var filteredServers: [ClashServer] {
@@ -41,7 +42,7 @@ struct SidebarView: View {
         }
     }
     
-    var body: some View {
+        var body: some View {
         List(selection: $selectedSidebarItem) {
             // 服务器分组
             Section("控制器") {
@@ -232,10 +233,46 @@ struct SidebarView: View {
                     isSelected: selectedSidebarItem == .help
                 )
                 .tag(SidebarItem.help)
+                
+                // 查看源码 - 直接打开网页，样式与其他设置项保持一致
+                Button {
+                    HapticManager.shared.impact(.light)
+                    showingSourceCode = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.body)
+                            .foregroundColor(.purple)
+                            .frame(width: 20)
+                        
+                        Text("查看源码")
+                            .font(.subheadline)
+                        
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
             }
         }
         .listStyle(SidebarListStyle())
         .navigationTitle("Clash Dash")
+        .overlay(
+            // 版本信息（左下角，完全透明背景）
+            VStack {
+                Spacer()
+                HStack {
+                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.4))
+                        .monospacedDigit()
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
+            .allowsHitTesting(false) // 不阻挡下方的交互
+        )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: {
@@ -294,6 +331,12 @@ struct SidebarView: View {
                     // 如果是设置项，清空服务器选择
                     selectedServer = nil
                 }
+            }
+        }
+        .sheet(isPresented: $showingSourceCode) {
+            if let url = URL(string: "https://github.com/bin64/Clash-Dash") {
+                SafariWebView(url: url)
+                    .ignoresSafeArea()
             }
         }
     }

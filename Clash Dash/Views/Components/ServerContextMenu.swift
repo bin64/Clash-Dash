@@ -180,7 +180,7 @@ struct ServerContextMenu: ViewModifier {
                 ServiceLogView(server: server)
             }
         }
-        .sheet(isPresented: $showingWebView) {
+        .fullScreenCover(isPresented: $showingWebView) {
             NavigationStack {
                 LuCIWebView(server: server)
             }
