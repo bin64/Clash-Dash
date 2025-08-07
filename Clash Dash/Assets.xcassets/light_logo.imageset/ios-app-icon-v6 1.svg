@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="white" rx="180" ry="180"/>
+  
+  <!-- Cat silhouette - increased scale from 0.6 to 0.8 -->
+  <g transform="translate(512, 512) scale(0.8)">
+    <!-- Cat head -->
+    <circle cx="0" cy="0" r="300" fill="#333333"/>
+    
+    <!-- Ears -->
+    <path d="M-200 -250 L-300 -450 L-100 -350 Z" fill="#333333"/>
+    <path d="M200 -250 L300 -450 L100 -350 Z" fill="#333333"/>
+    
+    <!-- Eyes -->
+    <circle cx="-100" cy="-50" r="40" fill="white"/>
+    <circle cx="100" cy="-50" r="40" fill="white"/>
+    <circle cx="-100" cy="-50" r="20" fill="#64B5F6"/>
+    <circle cx="100" cy="-50" r="20" fill="#64B5F6"/>
+    
+    <!-- Nose -->
+    <path d="M0 50 L30 80 L-30 80 Z" fill="#FFB74D"/>
+    
+    <!-- Whiskers -->
+    <g stroke="#666666" stroke-width="8">
+      <line x1="-160" y1="50" x2="-280" y2="20"/>
+      <line x1="-160" y1="80" x2="-280" y2="80"/>
+      <line x1="-160" y1="110" x2="-280" y2="140"/>
+      
+      <line x1="160" y1="50" x2="280" y2="20"/>
+      <line x1="160" y1="80" x2="280" y2="80"/>
+      <line x1="160" y1="110" x2="280" y2="140"/>
+    </g>
+  </g>
+  
+  <!-- Dash element - moved down slightly to accommodate larger cat -->
+  <g transform="translate(512, 850)">
+    <rect x="-150" y="-20" width="300" height="40" rx="20" ry="20" fill="#64B5F6"/>
+  </g>
+</svg>

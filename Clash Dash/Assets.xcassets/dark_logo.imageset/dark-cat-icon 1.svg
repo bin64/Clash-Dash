@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- 深色背景 -->
+  <rect width="1024" height="1024" fill="#1a1a1a" rx="180" ry="180"/>
+  
+  <!-- 猫咪剪影 - 使用更亮的灰色 -->
+  <g transform="translate(512, 512) scale(0.8)">
+    <!-- 猫头 -->
+    <circle cx="0" cy="0" r="300" fill="#4a4a4a"/>
+    
+    <!-- 耳朵 -->
+    <path d="M-200 -250 L-300 -450 L-100 -350 Z" fill="#4a4a4a"/>
+    <path d="M200 -250 L300 -450 L100 -350 Z" fill="#4a4a4a"/>
+    
+    <!-- 眼睛 - 使用更亮的颜色 -->
+    <circle cx="-100" cy="-50" r="40" fill="#e0e0e0"/>
+    <circle cx="100" cy="-50" r="40" fill="#e0e0e0"/>
+    <circle cx="-100" cy="-50" r="20" fill="#90CAF9"/>
+    <circle cx="100" cy="-50" r="20" fill="#90CAF9"/>
+    
+    <!-- 鼻子 - 使用更亮的橙色 -->
+    <path d="M0 50 L30 80 L-30 80 Z" fill="#FFD180"/>
+    
+    <!-- 胡须 - 使用更亮的颜色 -->
+    <g stroke="#8a8a8a" stroke-width="8">
+      <line x1="-160" y1="50" x2="-280" y2="20"/>
+      <line x1="-160" y1="80" x2="-280" y2="80"/>
+      <line x1="-160" y1="110" x2="-280" y2="140"/>
+      
+      <line x1="160" y1="50" x2="280" y2="20"/>
+      <line x1="160" y1="80" x2="280" y2="80"/>
+      <line x1="160" y1="110" x2="280" y2="140"/>
+    </g>
+  </g>
+  
+  <!-- 底部横条 - 使用更亮的蓝色 -->
+  <g transform="translate(512, 850)">
+    <rect x="-150" y="-20" width="300" height="40" rx="20" ry="20" fill="#90CAF9"/>
+  </g>
+</svg>

@@ -24,7 +24,7 @@ struct Clash_Dash: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AdaptiveContentView()
                 .environmentObject(networkMonitor)
                 .environmentObject(bindingManager)
         }
