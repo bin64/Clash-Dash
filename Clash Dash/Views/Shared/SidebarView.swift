@@ -269,7 +269,7 @@ struct SidebarView: View {
                             .foregroundColor(.purple)
                             .frame(width: 20)
                         
-                        Text("查看源码")
+                        Text("源码查看")
                             .font(.subheadline)
                         
                         Spacer()
@@ -286,7 +286,7 @@ struct SidebarView: View {
             VStack {
                 Spacer()
                 HStack {
-                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
+                    Text("Ver: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0") Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary.opacity(0.4))
                         .monospacedDigit()

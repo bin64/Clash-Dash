@@ -22,6 +22,25 @@ struct ServerDetailView: View {
     @State private var isTabBarVisible = true
     @State private var lastScrollOffset: CGFloat = 0
     
+    // 根据设备类型和屏幕方向计算浮动标签栏的最大宽度
+    private func floatingTabBarMaxWidth(for screenSize: CGSize) -> CGFloat {
+        #if targetEnvironment(macCatalyst)
+        return 520
+        #else
+        let isLandscape = screenSize.width > screenSize.height
+        
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return 480
+        } else if isLandscape {
+            // iPhone横屏时也使用紧凑布局
+            return 420
+        } else {
+            // iPhone竖屏时使用全宽
+            return .infinity
+        }
+        #endif
+    }
+    
     init(server: ClashServer) {
         self.server = server
         self._subscriptionManager = StateObject(wrappedValue: SubscriptionManager(server: server))
@@ -92,11 +111,16 @@ struct ServerDetailView: View {
                 // 浮动标签栏
                 VStack {
                     Spacer()
-                    FloatingTabBar(selectedTab: $selectedTab)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, geometry.safeAreaInsets.bottom + 25)
-                        .offset(y: isTabBarVisible ? 0 : 120)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: isTabBarVisible)
+                    HStack {
+                        Spacer()
+                        FloatingTabBar(selectedTab: $selectedTab)
+                            .frame(maxWidth: floatingTabBarMaxWidth(for: geometry.size))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, geometry.safeAreaInsets.bottom + 25)
+                    .offset(y: isTabBarVisible ? 0 : 120)
+                    .animation(.spring(response: 0.6, dampingFraction: 0.8), value: isTabBarVisible)
                 }
             }
             .environment(\.floatingTabBarVisible, isTabBarVisible)
