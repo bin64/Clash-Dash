@@ -319,6 +319,8 @@ struct FloatingTabBar: View {
     @State private var skewX: CGFloat = 0.0 // 水平倾斜
     @State private var cornerRadius: CGFloat = 20.0 // 动态圆角
     
+    @Environment(\.colorScheme) private var colorScheme
+    
     private let tabs = [
         (index: 0, title: "概览", icon: "chart.line.uptrend.xyaxis"),
         (index: 1, title: "代理", icon: "globe"),
@@ -332,14 +334,17 @@ struct FloatingTabBar: View {
             let tabWidth = geometry.size.width / CGFloat(tabs.count)
             
             ZStack {
-                // 背景
+                // 背景 - 适配深色模式
                 RoundedRectangle(cornerRadius: 25)
-                    .fill(.ultraThinMaterial)
+                    .fill(colorScheme == .dark ? .thickMaterial : .ultraThinMaterial)
                     .background(
                         RoundedRectangle(cornerRadius: 25)
                             .fill(
                                 LinearGradient(
-                                    gradient: Gradient(colors: [
+                                    gradient: Gradient(colors: colorScheme == .dark ? [
+                                        Color.black.opacity(0.9),
+                                        Color.gray.opacity(0.3)
+                                    ] : [
                                         Color.white.opacity(0.9),
                                         Color.white.opacity(0.7)
                                     ]),
@@ -349,14 +354,34 @@ struct FloatingTabBar: View {
                             )
                             .blur(radius: 0.5)
                     )
-                    .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 8)
-                    .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                    .overlay(
+                        // 深色模式下添加微弱的边框光晕
+                        RoundedRectangle(cornerRadius: 25)
+                            .stroke(
+                                colorScheme == .dark ? 
+                                    Color.white.opacity(0.1) : Color.clear,
+                                lineWidth: 0.5
+                            )
+                    )
+                    .shadow(
+                        color: colorScheme == .dark ? 
+                            Color.black.opacity(0.6) : Color.black.opacity(0.15), 
+                        radius: 15, x: 0, y: 8
+                    )
+                    .shadow(
+                        color: colorScheme == .dark ? 
+                            Color.black.opacity(0.3) : Color.black.opacity(0.05), 
+                        radius: 5, x: 0, y: 2
+                    )
                 
-                // 活跃指示器背景 - 方向性水滴效果
+                // 活跃指示器背景 - 方向性水滴效果，适配深色模式
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(
                         LinearGradient(
-                            gradient: Gradient(colors: [
+                            gradient: Gradient(colors: colorScheme == .dark ? [
+                                Color.accentColor.opacity(0.35),
+                                Color.accentColor.opacity(0.25)
+                            ] : [
                                 Color.accentColor.opacity(0.25),
                                 Color.accentColor.opacity(0.15)
                             ]),
@@ -390,18 +415,26 @@ struct FloatingTabBar: View {
                             VStack(spacing: 4) {
                                 // 固定高度的图标容器，确保对齐
                                 ZStack {
-                                    Image(systemName: tab.icon)
-                                        .font(.system(size: selectedTab == tab.index ? 18 : 16, weight: .semibold))
-                                        .foregroundColor(selectedTab == tab.index ? .accentColor : .secondary)
-                                        .scaleEffect(selectedTab == tab.index ? 1.1 : 1.0)
-                                        .animation(.spring(response: 0.4, dampingFraction: 0.6), value: selectedTab)
+                                                                    Image(systemName: tab.icon)
+                                    .font(.system(size: selectedTab == tab.index ? 18 : 16, weight: .semibold))
+                                    .foregroundColor(
+                                        selectedTab == tab.index ? 
+                                            .accentColor : 
+                                            (colorScheme == .dark ? .secondary : .secondary)
+                                    )
+                                    .scaleEffect(selectedTab == tab.index ? 1.1 : 1.0)
+                                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: selectedTab)
                                 }
                                 .frame(width: 24, height: 24) // 固定图标容器尺寸
                                 
                                 // 固定高度的文字容器，确保对齐
                                 Text(tab.title)
                                     .font(.system(size: 11, weight: selectedTab == tab.index ? .semibold : .medium))
-                                    .foregroundColor(selectedTab == tab.index ? .accentColor : .secondary)
+                                    .foregroundColor(
+                                        selectedTab == tab.index ? 
+                                            .accentColor : 
+                                            (colorScheme == .dark ? Color.secondary : Color.secondary)
+                                    )
                                     .scaleEffect(selectedTab == tab.index ? 1.05 : 1.0)
                                     .animation(.spring(response: 0.4, dampingFraction: 0.6), value: selectedTab)
                                     .frame(height: 14) // 固定文字容器高度

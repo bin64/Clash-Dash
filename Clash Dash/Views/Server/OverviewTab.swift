@@ -226,7 +226,7 @@ struct OverviewTab: View {
         }
         .background(Color(.systemGroupedBackground))
         .onAppear {
-            monitor.resetData() // 重置监控数据
+            monitor.resetRealtimeData() // 重置实时监控数据，保留累积数据
             
             // 设置连通性检测
             loadWebsiteSettings()

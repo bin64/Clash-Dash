@@ -167,7 +167,7 @@ struct OpenClashConfigView: View {
                 title: "正在切换配置..."
             )
         }
-        .sheet(item: $editingConfig) { config in
+        .fullScreenCover(item: $editingConfig) { config in
             ConfigEditorView(
                 viewModel: viewModel,
                 server: server,

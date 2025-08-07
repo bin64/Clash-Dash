@@ -40,6 +40,20 @@ class NetworkMonitor: ObservableObject {
         }
     }
     
+    // 只重置实时数据，保留累积的总流量数据
+    func resetRealtimeData() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.uploadSpeed = "0 B/s"
+            self.downloadSpeed = "0 B/s"
+            self.activeConnections = 0
+            self.memoryUsage = "0 MB"
+            self.speedHistory.removeAll()
+            self.memoryHistory.removeAll()
+            // 注意：不重置 totalUpload, totalDownload, rawTotalUpload, rawTotalDownload
+        }
+    }
+    
     private enum ConnectionType: String {
         case traffic = "Traffic"
         case memory = "Memory"
