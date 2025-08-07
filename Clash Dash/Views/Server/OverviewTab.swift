@@ -121,7 +121,8 @@ struct OverviewTab: View {
                                     value: "\(monitor.activeConnections)",
                                     icon: "link.circle.fill",
                                     color: .orange,
-                                    monitor: monitor
+                                    monitor: monitor,
+                                    connectionInfo: monitor.latestConnections
                                 )
                                 .onTapGesture {
                                     selectedTab = 3

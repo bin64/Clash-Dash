@@ -77,14 +77,8 @@ public class SharedDataManager {
         userDefaults.synchronize()
         // print("[SharedDataManager] Status saved successfully")
         
-        // 验证保存的数据
-        let savedStatus = getClashStatus(for: serverAddress)
-        // print("[SharedDataManager] Verifying saved data:")
-        // print("[SharedDataManager] - Server address: \(savedStatus.serverAddress)")
-        // print("[SharedDataManager] - Active connections: \(savedStatus.activeConnections)")
-        // print("[SharedDataManager] - Upload total: \(savedStatus.uploadTotal)")
-        // print("[SharedDataManager] - Download total: \(savedStatus.downloadTotal)")
-        // print("[SharedDataManager] - Memory usage: \(savedStatus.memoryUsage ?? 0)")
+        // 验证保存的数据 (用于调试，当前已禁用)
+        let _ = getClashStatus(for: serverAddress)
     }
     
     public func getClashStatus(for serverAddress: String? = nil) -> ClashStatus {

@@ -13,6 +13,7 @@ class NetworkMonitor: ObservableObject {
     @Published var memoryHistory: [MemoryRecord] = []
     @Published var rawTotalUpload: Int = 0
     @Published var rawTotalDownload: Int = 0
+    @Published var latestConnections: [String] = [] // 添加最新连接信息
     
     private var trafficTask: URLSessionWebSocketTask?
     private var memoryTask: URLSessionWebSocketTask?
@@ -37,6 +38,7 @@ class NetworkMonitor: ObservableObject {
             self.memoryHistory.removeAll()
             self.rawTotalUpload = 0
             self.rawTotalDownload = 0
+            self.latestConnections.removeAll()
         }
     }
     
@@ -50,6 +52,7 @@ class NetworkMonitor: ObservableObject {
             self.memoryUsage = "0 MB"
             self.speedHistory.removeAll()
             self.memoryHistory.removeAll()
+            self.latestConnections.removeAll()
             // 注意：不重置 totalUpload, totalDownload, rawTotalUpload, rawTotalDownload
         }
     }
@@ -368,6 +371,35 @@ class NetworkMonitor: ObservableObject {
                 self.totalDownload = self.formatBytes(connections.downloadTotal)
                 self.rawTotalUpload = connections.uploadTotal
                 self.rawTotalDownload = connections.downloadTotal
+                
+                // 提取所有连接信息（用于滚动显示）
+                let allConnections = connections.connections
+                    .compactMap { connection -> String? in
+                        // 优先使用host，如果为空则使用destinationIP
+                        let baseInfo: String
+                        if !connection.metadata.host.isEmpty {
+                            baseInfo = connection.metadata.host
+                        } else if !connection.metadata.destinationIP.isEmpty {
+                            baseInfo = connection.metadata.destinationIP
+                        } else {
+                            return nil
+                        }
+                        
+                        // 在iPad上，如果有端口信息，可以添加端口号
+                        #if targetEnvironment(macCatalyst)
+                        let isLargeScreen = true
+                        #else
+                        let isLargeScreen = UIDevice.current.userInterfaceIdiom == .pad
+                        #endif
+                        
+                        if isLargeScreen && !connection.metadata.destinationPort.isEmpty && connection.metadata.destinationPort != "80" && connection.metadata.destinationPort != "443" {
+                            return "\(baseInfo):\(connection.metadata.destinationPort)"
+                        } else {
+                            return baseInfo
+                        }
+                    }
+                
+                self.latestConnections = Array(allConnections.reversed()) // 倒序显示，最新的在前
             }
         } catch {
             print("[NetworkMonitor] Error decoding connections data: \(error)")
@@ -464,7 +496,7 @@ struct ConnectionsData: Codable {
             connections = premiumConnections.map { premiumConn in
                 Connection(
                     id: premiumConn.id,
-                    metadata: ConnectionMetadata(
+                    metadata: Shared.ConnectionMetadata(
                         network: premiumConn.metadata.network,
                         type: premiumConn.metadata.type,
                         sourceIP: premiumConn.metadata.sourceIP,
@@ -531,7 +563,7 @@ struct PremiumMetadata: Codable {
 
 struct Connection: Codable {
     let id: String
-    let metadata: ConnectionMetadata
+    let metadata: Shared.ConnectionMetadata
     let upload: Int
     let download: Int
     let start: String
@@ -547,7 +579,7 @@ struct Connection: Codable {
         case downloadSpeed, uploadSpeed, isAlive
     }
     
-    init(id: String, metadata: ConnectionMetadata, upload: Int, download: Int, start: String, chains: [String], rule: String, rulePayload: String, downloadSpeed: Double = 0, uploadSpeed: Double = 0, isAlive: Bool = true) {
+    init(id: String, metadata: Shared.ConnectionMetadata, upload: Int, download: Int, start: String, chains: [String], rule: String, rulePayload: String, downloadSpeed: Double = 0, uploadSpeed: Double = 0, isAlive: Bool = true) {
         self.id = id
         self.metadata = metadata
         self.upload = upload
@@ -564,7 +596,7 @@ struct Connection: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
-        metadata = try container.decode(ConnectionMetadata.self, forKey: .metadata)
+        metadata = try container.decode(Shared.ConnectionMetadata.self, forKey: .metadata)
         upload = try container.decode(Int.self, forKey: .upload)
         download = try container.decode(Int.self, forKey: .download)
         start = try container.decode(String.self, forKey: .start)
