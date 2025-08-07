@@ -453,14 +453,26 @@ struct SidebarServerRow: View {
             // 中间：服务器信息
             VStack(alignment: .leading, spacing: 1) {
                 // 服务器名称
-                Text(server.name.isEmpty ? "未命名控制器" : server.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(
-                        isHidden ? .secondary : 
-                        shouldShowSelection ? selectionColors.accent : .primary
-                    )
-                    .lineLimit(1)
-                    .animation(.easeInOut(duration: 0.2), value: shouldShowSelection)
+                HStack(spacing: 4) {
+                    Text(server.name.isEmpty ? server.url : server.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(
+                            isHidden ? .secondary : 
+                            shouldShowSelection ? selectionColors.accent : .primary
+                        )
+                        .lineLimit(1)
+                        .animation(.easeInOut(duration: 0.2), value: shouldShowSelection)
+                    
+                    // 快速启动图标
+                    if server.isQuickLaunch {
+                        Image(systemName: "bolt.circle.fill")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.yellow)
+                            .shadow(color: .yellow.opacity(0.3), radius: 1)
+                    }
+                    
+                    Spacer()
+                }
                 
                 // 服务器地址和类型
                 HStack(spacing: 4) {

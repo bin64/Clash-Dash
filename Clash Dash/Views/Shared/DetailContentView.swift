@@ -10,43 +10,45 @@ struct DetailContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        Group {
-            if let server = selectedServer, 
-               let item = selectedSidebarItem,
-               case .server = item {
-                // 显示服务器详情
-                ServerDetailView(server: server)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .id(server.id) // 强制重新创建视图
-            } else if let item = selectedSidebarItem {
-                // 显示设置页面
-                switch item {
-                case .globalSettings:
-                    GlobalSettingsView()
-                        .navigationTitle("全局配置")
-                        .navigationBarTitleDisplayMode(.large)
-                        
-                case .appearanceSettings:
-                    AppearanceSettingsView()
-                        .navigationTitle("外观设置")
-                        .navigationBarTitleDisplayMode(.large)
-                        
-                case .logs:
-                    LogsView()
-                        .navigationTitle("运行日志")
-                        .navigationBarTitleDisplayMode(.large)
-                        
-                case .help:
-                    helpView
-                        .navigationTitle("如何使用")
-                        .navigationBarTitleDisplayMode(.large)
-                        
-                default:
+        NavigationStack {
+            Group {
+                if let server = selectedServer, 
+                   let item = selectedSidebarItem,
+                   case .server = item {
+                    // 显示服务器详情
+                    ServerDetailView(server: server)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .id(server.id) // 强制重新创建视图
+                } else if let item = selectedSidebarItem {
+                    // 显示设置页面
+                    switch item {
+                    case .globalSettings:
+                        GlobalSettingsView()
+                            .navigationTitle("全局配置")
+                            .navigationBarTitleDisplayMode(.large)
+                            
+                    case .appearanceSettings:
+                        AppearanceSettingsView()
+                            .navigationTitle("外观设置")
+                            .navigationBarTitleDisplayMode(.large)
+                            
+                    case .logs:
+                        LogsView()
+                            .navigationTitle("运行日志")
+                            .navigationBarTitleDisplayMode(.large)
+                            
+                    case .help:
+                        helpView
+                            .navigationTitle("如何使用")
+                            .navigationBarTitleDisplayMode(.large)
+                            
+                    default:
+                        welcomeView
+                    }
+                } else {
+                    // 默认欢迎页面
                     welcomeView
                 }
-            } else {
-                // 默认欢迎页面
-                welcomeView
             }
         }
         .sheet(isPresented: $showingSourceCode) {
@@ -185,12 +187,10 @@ struct FeatureCard: View {
 }
 
 #Preview {
-    NavigationStack {
-        DetailContentView(
-            selectedServer: .constant(nil),
-            selectedSidebarItem: .constant(nil),
-            settingsViewModel: SettingsViewModel()
-        )
-        .environmentObject(WiFiBindingManager())
-    }
+    DetailContentView(
+        selectedServer: .constant(nil),
+        selectedSidebarItem: .constant(nil),
+        settingsViewModel: SettingsViewModel()
+    )
+    .environmentObject(WiFiBindingManager())
 } 
