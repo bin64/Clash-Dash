@@ -43,7 +43,7 @@ struct SidebarView: View {
     }
     
         var body: some View {
-        List(selection: $selectedSidebarItem) {
+        List {
             // 服务器分组
             Section("控制器") {
                 if viewModel.servers.isEmpty {
@@ -105,7 +105,11 @@ struct SidebarView: View {
                             onShowCustomRules: onShowCustomRules,
                             onShowRestartService: onShowRestartService
                         )
-                        .tag(SidebarItem.server(server.id))
+                        .onTapGesture {
+                            selectedServer = server
+                            selectedSidebarItem = .server(server.id)
+                            HapticManager.shared.impact(.light)
+                        }
                     }
                     
                     // 隐藏的服务器
@@ -174,22 +178,26 @@ struct SidebarView: View {
                         // 隐藏服务器列表
                         if showHiddenServers {
                             ForEach(hiddenServers) { server in
-                                                                    SidebarServerRow(
-                                        server: server,
-                                        isSelected: selectedServer?.id == server.id,
-                                        isHidden: true,
-                                        visibleServersCount: filteredServers.count + hiddenServers.count,
-                                        onEdit: { editingServer = server },
-                                        viewModel: viewModel,
-                                        settingsViewModel: settingsViewModel,
-                                        onModeChange: onModeChange,
-                                        onShowConfigSubscription: onShowConfigSubscription,
-                                        onShowSwitchConfig: onShowSwitchConfig,
-                                        onShowCustomRules: onShowCustomRules,
-                                        onShowRestartService: onShowRestartService
-                                    )
-                                    .tag(SidebarItem.server(server.id))
-                                    .padding(.leading, 12) // 增加缩进显示层级
+                                                                                                    SidebarServerRow(
+                                    server: server,
+                                    isSelected: selectedServer?.id == server.id,
+                                    isHidden: true,
+                                    visibleServersCount: filteredServers.count + hiddenServers.count,
+                                    onEdit: { editingServer = server },
+                                    viewModel: viewModel,
+                                    settingsViewModel: settingsViewModel,
+                                    onModeChange: onModeChange,
+                                    onShowConfigSubscription: onShowConfigSubscription,
+                                    onShowSwitchConfig: onShowSwitchConfig,
+                                    onShowCustomRules: onShowCustomRules,
+                                    onShowRestartService: onShowRestartService
+                                )
+                                .onTapGesture {
+                                    selectedServer = server
+                                    selectedSidebarItem = .server(server.id)
+                                    HapticManager.shared.impact(.light)
+                                }
+                                .padding(.leading, 12) // 增加缩进显示层级
                             }
                         }
                     }
@@ -205,7 +213,11 @@ struct SidebarView: View {
                     item: .globalSettings,
                     isSelected: selectedSidebarItem == .globalSettings
                 )
-                .tag(SidebarItem.globalSettings)
+                .onTapGesture {
+                    selectedServer = nil
+                    selectedSidebarItem = .globalSettings
+                    HapticManager.shared.impact(.light)
+                }
                 
                 SidebarSettingsRow(
                     title: "外观设置",
@@ -214,7 +226,11 @@ struct SidebarView: View {
                     item: .appearanceSettings,
                     isSelected: selectedSidebarItem == .appearanceSettings
                 )
-                .tag(SidebarItem.appearanceSettings)
+                .onTapGesture {
+                    selectedServer = nil
+                    selectedSidebarItem = .appearanceSettings
+                    HapticManager.shared.impact(.light)
+                }
                 
                 SidebarSettingsRow(
                     title: "运行日志",
@@ -223,7 +239,11 @@ struct SidebarView: View {
                     item: .logs,
                     isSelected: selectedSidebarItem == .logs
                 )
-                .tag(SidebarItem.logs)
+                .onTapGesture {
+                    selectedServer = nil
+                    selectedSidebarItem = .logs
+                    HapticManager.shared.impact(.light)
+                }
                 
                 SidebarSettingsRow(
                     title: "如何使用",
@@ -232,7 +252,11 @@ struct SidebarView: View {
                     item: .help,
                     isSelected: selectedSidebarItem == .help
                 )
-                .tag(SidebarItem.help)
+                .onTapGesture {
+                    selectedServer = nil
+                    selectedSidebarItem = .help
+                    HapticManager.shared.impact(.light)
+                }
                 
                 // 查看源码 - 直接打开网页，样式与其他设置项保持一致
                 Button {
@@ -315,24 +339,7 @@ struct SidebarView: View {
         .refreshable {
             await viewModel.checkAllServersStatus()
         }
-        .onChange(of: selectedSidebarItem) { newItem in
-            // 当选择项发生变化时，更新相关状态
-            if let newItem = newItem {
-                // 添加触觉反馈
-                HapticManager.shared.impact(.light)
-                
-                if case .server(let serverId) = newItem,
-                   let server = viewModel.servers.first(where: { $0.id == serverId }) {
-                    selectedServer = server
-                } else if case .server = newItem {
-                    // 如果是服务器项但找不到对应服务器，清空选择
-                    selectedServer = nil
-                } else {
-                    // 如果是设置项，清空服务器选择
-                    selectedServer = nil
-                }
-            }
-        }
+
         .sheet(isPresented: $showingSourceCode) {
             if let url = URL(string: "https://github.com/bin64/Clash-Dash") {
                 SafariWebView(url: url)
@@ -425,25 +432,35 @@ struct SidebarServerRow: View {
     
     // 计算是否应该显示选中状态
     private var shouldShowSelection: Bool {
-        // 当可见服务器数量大于1时，才显示选中状态
-        return isSelected && visibleServersCount > 1
+        // 始终根据选中状态显示，让用户清楚看到当前选中的控制器
+        return isSelected
+    }
+    
+    // 计算未选中状态的透明度和缩放
+    private var unselectedStyle: (opacity: Double, scale: Double) {
+        if isSelected {
+            return (1.0, 1.0)
+        } else {
+            // 未选中的控制器稍微降低透明度和缩放，增强视觉层次
+            return (0.75, 0.96)
+        }
     }
     
     // 自定义选中配色方案，避免系统强调色影响
     private var selectionColors: (background: [Color], border: [Color], accent: Color) {
         #if targetEnvironment(macCatalyst)
-        // Mac专用配色：使用更中性的灰蓝色
+        // Mac专用配色：使用更突出的蓝色渐变
         return (
-            background: [Color(red: 0.95, green: 0.97, blue: 1.0), Color(red: 0.92, green: 0.95, blue: 0.98)],
-            border: [Color(red: 0.7, green: 0.8, blue: 0.9), Color(red: 0.6, green: 0.7, blue: 0.85)],
-            accent: Color(red: 0.3, green: 0.5, blue: 0.8)
+            background: [Color(red: 0.94, green: 0.96, blue: 1.0), Color(red: 0.88, green: 0.93, blue: 0.99)],
+            border: [Color(red: 0.6, green: 0.75, blue: 0.95), Color(red: 0.45, green: 0.65, blue: 0.9)],
+            accent: Color(red: 0.2, green: 0.45, blue: 0.85)
         )
         #else
-        // iOS配色：使用稍微温和的蓝色
+        // iOS配色：使用更鲜明的蓝色渐变
         return (
-            background: [Color(red: 0.93, green: 0.95, blue: 1.0), Color(red: 0.88, green: 0.92, blue: 0.98)],
-            border: [Color(red: 0.6, green: 0.75, blue: 0.95), Color(red: 0.5, green: 0.65, blue: 0.9)],
-            accent: Color(red: 0.2, green: 0.45, blue: 0.8)
+            background: [Color(red: 0.90, green: 0.94, blue: 1.0), Color(red: 0.82, green: 0.90, blue: 0.98)],
+            border: [Color(red: 0.5, green: 0.7, blue: 0.95), Color(red: 0.35, green: 0.6, blue: 0.9)],
+            accent: Color(red: 0.15, green: 0.4, blue: 0.85)
         )
         #endif
     }
@@ -498,10 +515,10 @@ struct SidebarServerRow: View {
                 // 服务器名称
                 HStack(spacing: 4) {
                     Text(server.name.isEmpty ? server.url : server.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13, weight: shouldShowSelection ? .semibold : .medium))
                         .foregroundColor(
                             isHidden ? .secondary : 
-                            shouldShowSelection ? selectionColors.accent : .primary
+                            shouldShowSelection ? selectionColors.accent : .primary.opacity(0.8)
                         )
                         .lineLimit(1)
                         .animation(.easeInOut(duration: 0.2), value: shouldShowSelection)
@@ -521,7 +538,7 @@ struct SidebarServerRow: View {
                 HStack(spacing: 4) {
                     Text("\(server.url):\(server.port)")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(shouldShowSelection ? .secondary : .secondary.opacity(0.7))
                         .lineLimit(1)
                     
                     if server.status == .ok {
@@ -554,11 +571,15 @@ struct SidebarServerRow: View {
             if server.status == .ok {
                 Image(systemName: "wifi.circle.fill")
                     .font(.system(size: 12))
-                    .foregroundColor(.green)
+                    .foregroundColor(shouldShowSelection ? .green : .green.opacity(0.7))
+                    .scaleEffect(shouldShowSelection ? 1.1 : 1.0)
+                    .animation(.easeInOut(duration: 0.2), value: shouldShowSelection)
             } else if server.status == .error {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 12))
-                    .foregroundColor(.red)
+                    .foregroundColor(shouldShowSelection ? .red : .red.opacity(0.7))
+                    .scaleEffect(shouldShowSelection ? 1.1 : 1.0)
+                    .animation(.easeInOut(duration: 0.2), value: shouldShowSelection)
             }
         }
         .padding(.horizontal, 10)
@@ -587,15 +608,16 @@ struct SidebarServerRow: View {
                         )
                 )
                 .shadow(
-                    color: shouldShowSelection ? selectionColors.accent.opacity(0.15) : Color.clear,
-                    radius: shouldShowSelection ? 3 : 0,
+                    color: shouldShowSelection ? selectionColors.accent.opacity(0.2) : Color.clear,
+                    radius: shouldShowSelection ? 4 : 0,
                     x: 0,
-                    y: shouldShowSelection ? 1 : 0
+                    y: shouldShowSelection ? 2 : 0
                 )
-                .scaleEffect(shouldShowSelection ? 1.0 : 0.98)
-                .animation(.easeInOut(duration: 0.2), value: shouldShowSelection)
+                .scaleEffect(shouldShowSelection ? 1.02 : unselectedStyle.scale)
+                .animation(.easeInOut(duration: 0.25), value: shouldShowSelection)
         )
-        .opacity(isHidden ? 0.6 : 1.0)
+        .opacity(isHidden ? 0.6 : unselectedStyle.opacity)
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
         .serverContextMenu(
             viewModel: viewModel,
             settingsViewModel: settingsViewModel,
@@ -619,19 +641,80 @@ struct SidebarSettingsRow: View {
     let item: SidebarItem
     let isSelected: Bool
     
+    // 自定义选中配色方案，与SidebarServerRow保持一致
+    private var selectionColors: (background: [Color], border: [Color], accent: Color) {
+        #if targetEnvironment(macCatalyst)
+        // Mac专用配色：使用更突出的蓝色渐变
+        return (
+            background: [Color(red: 0.94, green: 0.96, blue: 1.0), Color(red: 0.88, green: 0.93, blue: 0.99)],
+            border: [Color(red: 0.6, green: 0.75, blue: 0.95), Color(red: 0.45, green: 0.65, blue: 0.9)],
+            accent: Color(red: 0.2, green: 0.45, blue: 0.85)
+        )
+        #else
+        // iOS配色：使用更鲜明的蓝色渐变
+        return (
+            background: [Color(red: 0.90, green: 0.94, blue: 1.0), Color(red: 0.82, green: 0.90, blue: 0.98)],
+            border: [Color(red: 0.5, green: 0.7, blue: 0.95), Color(red: 0.35, green: 0.6, blue: 0.9)],
+            accent: Color(red: 0.15, green: 0.4, blue: 0.85)
+        )
+        #endif
+    }
+    
+    // 计算未选中状态的缩放（设置项目保持正常透明度）
+    private var unselectedScale: Double {
+        return isSelected ? 1.02 : 1.0
+    }
+    
     var body: some View {
         HStack(spacing: 12) {
+            // 图标
             Image(systemName: icon)
                 .font(.body)
-                .foregroundColor(iconColor)
+                .foregroundColor(isSelected ? selectionColors.accent : iconColor)
                 .frame(width: 20)
+                .animation(.easeInOut(duration: 0.2), value: isSelected)
             
+            // 标题
             Text(title)
-                .font(.subheadline)
+                .font(.system(.subheadline, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? selectionColors.accent : .primary)
+                .animation(.easeInOut(duration: 0.2), value: isSelected)
             
             Spacer()
         }
         .padding(.vertical, 4)
+        .background(
+            // 精致的选中效果背景
+            RoundedRectangle(cornerRadius: 10)
+                .fill(
+                    LinearGradient(
+                        gradient: Gradient(colors: isSelected ? 
+                            selectionColors.background : [Color.clear, Color.clear]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(
+                            LinearGradient(
+                                gradient: Gradient(colors: isSelected ? 
+                                    selectionColors.border : [Color.clear, Color.clear]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: isSelected ? 1 : 0
+                        )
+                )
+                .shadow(
+                    color: isSelected ? selectionColors.accent.opacity(0.2) : Color.clear,
+                    radius: isSelected ? 4 : 0,
+                    x: 0,
+                    y: isSelected ? 2 : 0
+                )
+                .scaleEffect(unselectedScale)
+                .animation(.easeInOut(duration: 0.25), value: isSelected)
+        )
     }
 }
 
