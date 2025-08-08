@@ -12,6 +12,7 @@ struct StatusCard: View {
     @AppStorage("showWaterDropEffect") private var showWaterDropEffect = true
     @AppStorage("showNumberAnimation") private var showNumberAnimation = true
     @AppStorage("showSpeedNumberAnimation") private var showSpeedNumberAnimation = false
+    @AppStorage("showConnectionsBackground") private var showConnectionsBackground = true
     
     // 添加可选的连接信息参数
     let connectionInfo: [String]?
@@ -107,8 +108,8 @@ struct StatusCard: View {
                         isUpload: title.contains("上传")
                     )
                 }
-                // 显示连接信息背景
-                if let connections = connectionInfo, !connections.isEmpty {
+                // 显示连接信息背景（受开关控制）
+                if showConnectionsBackground, let connections = connectionInfo, !connections.isEmpty {
                     ConnectionInfoBackground(connections: connections, color: color)
                 }
             }
