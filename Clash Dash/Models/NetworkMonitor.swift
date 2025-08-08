@@ -48,11 +48,12 @@ class NetworkMonitor: ObservableObject {
             guard let self = self else { return }
             self.uploadSpeed = "0 B/s"
             self.downloadSpeed = "0 B/s"
-            self.activeConnections = 0
+            // 保留活跃连接数与最新连接列表，避免切换标签页时瞬间清零
+            // self.activeConnections = 0
             self.memoryUsage = "0 MB"
             self.speedHistory.removeAll()
             self.memoryHistory.removeAll()
-            self.latestConnections.removeAll()
+            // self.latestConnections.removeAll()
             // 注意：不重置 totalUpload, totalDownload, rawTotalUpload, rawTotalDownload
         }
     }

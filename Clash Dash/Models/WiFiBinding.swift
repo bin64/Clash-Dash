@@ -70,7 +70,7 @@ class WiFiBindingManager: ObservableObject {
             self.bindings = bindings
             logger.info("从 UserDefaults 加载绑定: \(bindings.count) 个")
             for binding in bindings {
-                logger.debug("   - SSID: \(binding.ssid), 服务器IDs: \(binding.serverIds)")
+                logger.debug("   - SSID: \(binding.ssid), 控制器IDs: \(binding.serverIds)")
             }
         } else {
             logger.warning("无法从 UserDefaults 加载 Wi-Fi 绑定数据")
@@ -87,7 +87,7 @@ class WiFiBindingManager: ObservableObject {
             defaults.set(data, forKey: storageKey)
             logger.info("保存 Wi-Fi 绑定到 UserDefaults: \(bindings.count) 个")
             for binding in bindings {
-                logger.debug("   - SSID: \(binding.ssid), 服务器IDs: \(binding.serverIds)")
+                logger.debug("   - SSID: \(binding.ssid), 控制器IDs: \(binding.serverIds)")
             }
         } else {
             logger.error("保存 Wi-Fi 绑定失败")
@@ -100,7 +100,7 @@ class WiFiBindingManager: ObservableObject {
             return
         }
         
-        logger.info("添加新的 Wi-Fi 绑定: SSID=\(binding.ssid), 服务器IDs=\(binding.serverIds)")
+        logger.info("添加新的 Wi-Fi 绑定: SSID=\(binding.ssid), 控制器IDs=\(binding.serverIds)")
         bindings.append(binding)
         saveBindings()
         objectWillChange.send()
@@ -113,7 +113,7 @@ class WiFiBindingManager: ObservableObject {
             return
         }
         
-        logger.info("更新 Wi-Fi 绑定: SSID=\(binding.ssid), 服务器IDs=\(binding.serverIds)")
+        logger.info("更新 Wi-Fi 绑定: SSID=\(binding.ssid), 控制器IDs=\(binding.serverIds)")
         if let index = bindings.firstIndex(where: { $0.id == binding.id }) {
             var newBindings = bindings
             newBindings[index] = binding
@@ -142,20 +142,20 @@ class WiFiBindingManager: ObservableObject {
     private func loadDefaultServers() {
         if let data = defaults.stringArray(forKey: defaultServersKey) {
             defaultServerIds = Set(data)
-            logger.debug("加载默认服务器列表: \(data.count) 个")
+            logger.debug("加载默认控制器列表: \(data.count) 个")
         }
     }
     
     private func saveDefaultServers() {
         defaults.set(Array(defaultServerIds), forKey: defaultServersKey)
-        logger.debug("保存默认服务器列表: \(defaultServerIds.count) 个")
+        logger.debug("保存默认控制器列表: \(defaultServerIds.count) 个")
     }
     
     func updateDefaultServers(_ serverIds: Set<String>) {
         defaultServerIds = serverIds
         saveDefaultServers()
         objectWillChange.send()
-        logger.info("更新默认服务器列表: \(serverIds.count) 个")
+        logger.info("更新默认控制器列表: \(serverIds.count) 个")
     }
     
     func onEnableChange() {
