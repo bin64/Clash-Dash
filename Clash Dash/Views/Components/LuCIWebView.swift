@@ -287,8 +287,8 @@ class LuCIWebViewModel: ObservableObject {
                 throw NetworkError.invalidURL
             }
             
-            print("🔐 Web 访问 URL: \(finalURL.absoluteString)")
-            print("🔐 OpenWRT SSL设置: \(server.openWRTUseSSL)")
+            print("Web 访问 URL: \(finalURL.absoluteString)")
+            print("OpenWRT SSL设置: \(server.openWRTUseSSL)")
             
             url = finalURL
             isLoading = false

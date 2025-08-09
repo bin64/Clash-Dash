@@ -8,16 +8,16 @@ log() {
             echo "🔍 $message"
             ;;
         "error")
-            echo "❌ $message"
+            echo "$message"
             ;;
         "success")
-            echo "✅ $message"
+            echo "$message"
             ;;
         "send")
             echo "📤 $message"
             ;;
         "receive")
-            echo "📥 $message"
+            echo "$message"
             ;;
         *)
             echo "$message"

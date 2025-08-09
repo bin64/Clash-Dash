@@ -175,7 +175,7 @@ struct ServerDetailView: View {
         .onChange(of: settingsViewModel.httpPort) { newPort in
             print("📣 HTTP端口已更新: \(newPort)")
             connectivityViewModel.setupWithServer(server, httpPort: newPort, settingsViewModel: settingsViewModel)
-            print("🔄 已更新ConnectionViewModel中的端口: \(newPort)")
+            print("已更新ConnectionViewModel中的端口: \(newPort)")
         }
     }
     
@@ -284,7 +284,7 @@ struct ServerDetailView: View {
         .onChange(of: settingsViewModel.httpPort) { newPort in
             print("📣 HTTP端口已更新: \(newPort)")
             connectivityViewModel.setupWithServer(server, httpPort: newPort, settingsViewModel: settingsViewModel)
-            print("🔄 已更新ConnectionViewModel中的端口: \(newPort)")
+            print("已更新ConnectionViewModel中的端口: \(newPort)")
         }
     }
     

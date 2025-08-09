@@ -28,7 +28,7 @@ class URLSessionManager: NSObject, URLSessionDelegate {
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         let messages = [
-            "🔐 收到证书验证请求",
+            "收到证书验证请求",
             "认证方法: \(challenge.protectionSpace.authenticationMethod)",
             "主机: \(challenge.protectionSpace.host)",
             "端口: \(challenge.protectionSpace.port)",
@@ -47,17 +47,17 @@ class URLSessionManager: NSObject, URLSessionDelegate {
                 let credential = URLCredential(trust: serverTrust)
                 completionHandler(.useCredential, credential)
                 Task { @MainActor in
-                    LogManager.shared.debug("✅ 已接受服务器证书（包括自签证书）")
+                    LogManager.shared.debug("已接受服务器证书（包括自签证书）")
                 }
             } else {
                 Task { @MainActor in
-                    LogManager.shared.debug("⚠️ 无法获取服务器证书")
+                    LogManager.shared.debug("无法获取服务器证书")
                 }
                 completionHandler(.performDefaultHandling, nil)
             }
         } else {
             Task { @MainActor in
-                LogManager.shared.debug("❌ 默认处理证书验证")
+                LogManager.shared.debug("默认处理证书验证")
             }
             completionHandler(.performDefaultHandling, nil)
         }

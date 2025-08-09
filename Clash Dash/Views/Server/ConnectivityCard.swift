@@ -128,7 +128,7 @@ struct ConnectivityCard: View {
                 server = serverFromEnv
                 let httpPort = settingsViewModel.httpPort
                 viewModel.setupWithServer(serverFromEnv, httpPort: httpPort, settingsViewModel: settingsViewModel)
-                print("⚙️ ConnectivityCard - 已重新设置服务器: \(serverFromEnv.url) 端口: \(httpPort)")
+                print("已重新设置控制器: \(serverFromEnv.url) 端口: \(httpPort)")
             }
         }
     }

@@ -28,15 +28,15 @@ class SettingsViewModel: ObservableObject {
     
     private func makeRequest(path: String, server: ClashServer) -> URLRequest? {
         let scheme = server.clashUseSSL ? "https" : "http"
-        logger.debug("🔐 SSL设置: clashUseSSL = \(server.clashUseSSL)")
-        logger.debug("📡 使用协议: \(scheme)")
+        // logger.debug("SSL设置: clashUseSSL = \(server.clashUseSSL)")
+        // logger.debug("📡 使用协议: \(scheme)")
         
         guard let url = URL(string: "\(scheme)://\(server.url):\(server.port)/\(path)") else {
-            logger.error("❌ 无效的 URL")
+            logger.error("无效的 URL")
             return nil
         }
         
-        logger.debug("🌐 完整URL: \(url.absoluteString)")
+        // logger.debug("完整URL: \(url.absoluteString)")
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
@@ -45,7 +45,7 @@ class SettingsViewModel: ObservableObject {
     }
     
     func fetchConfig(server: ClashServer) {
-        logger.debug("开始获取配置...")
+        // logger.debug("开始获取配置...")
         guard let request = makeRequest(path: "configs", server: server) else { 
             logger.error("创建请求失败")
             return 

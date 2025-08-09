@@ -19,9 +19,11 @@ struct LogsView: View {
                 List {
                     ForEach(filteredLogs) { entry in
                         LogEntryView(entry: entry)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     }
                 }
                 .listStyle(.plain)
+                .environment(\.defaultMinListRowHeight, 28)
                 .searchable(text: $searchText, prompt: "搜索日志")
                 .overlay {
                     if logManager.logs.isEmpty {
@@ -101,30 +103,36 @@ struct LogEntryView: View {
     let entry: LogManager.LogEntry
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(entry.message)
-                .font(.system(.body, design: .monospaced))
-                .foregroundColor(.primary)
-            
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(entry.levelInfo.0)
-                    .font(.caption2.weight(.medium))
+                    .font(.caption2.weight(.semibold))
                     .foregroundColor(entry.levelInfo.1)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(entry.levelInfo.1.opacity(0.1))
-                    .cornerRadius(4)
+                    .background(entry.levelInfo.1.opacity(0.12))
+                    .clipShape(Capsule())
                 
-                Text(entry.timestamp, style: .date)
+                Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
                     .foregroundColor(.secondary)
                 
-                Text(entry.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
             }
+            
+            Text(entry.message)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundColor(.primary)
+                .lineSpacing(2)
+            
+            // 来源信息：文件名:行 函数
+            Text("\(entry.fileName.replacingOccurrences(of: ".swift", with: "")):\(entry.line) \(entry.function)")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .contextMenu {
             Button {
                 UIPasteboard.general.string = entry.message

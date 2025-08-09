@@ -49,7 +49,7 @@ struct OpenClashRulesView: View {
                     VStack {
                         if !parsingErrors.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("⚠️ 规则解析错误")
+                                Text("规则解析错误")
                                     .font(.headline)
                                     .foregroundColor(.red)
                                     .padding(.bottom, 4)

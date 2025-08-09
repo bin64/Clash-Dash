@@ -64,13 +64,46 @@ class WiFiBindingManager: ObservableObject {
         }
     }
     
+    // 解析并加载所有已保存的控制器信息（兼容新旧存储键）
+    private func loadAllServers() -> [ClashServer] {
+        if let data = defaults.data(forKey: "servers"),
+           let servers = try? JSONDecoder().decode([ClashServer].self, from: data) {
+            return servers
+        }
+        if let data = defaults.data(forKey: "SavedClashServers"),
+           let servers = try? JSONDecoder().decode([ClashServer].self, from: data) {
+            return servers
+        }
+        return []
+    }
+    
+    // 将控制器 ID 列表转换为可读的控制器详情字符串
+    private func describeServers(_ serverIds: [String]) -> String {
+        let allServers = loadAllServers()
+        if allServers.isEmpty { return serverIds.joined(separator: ", ") }
+        let idSet = Set(serverIds)
+        let matched = allServers.filter { idSet.contains($0.id.uuidString) }
+        if matched.isEmpty { return serverIds.joined(separator: ", ") }
+        return matched.map { server in
+            let address: String
+            if server.source == .clashController {
+                address = "\(server.url):\(server.port)"
+            } else {
+                let host = server.openWRTUrl ?? server.url
+                let port = server.openWRTPort ?? server.port
+                address = "\(host):\(port)"
+            }
+            return "\(server.displayName) [\(address)]"
+        }.joined(separator: ", ")
+    }
+    
     private func loadBindings() {
         if let data = defaults.data(forKey: storageKey),
            let bindings = try? JSONDecoder().decode([WiFiBinding].self, from: data) {
             self.bindings = bindings
             logger.info("从 UserDefaults 加载绑定: \(bindings.count) 个")
             for binding in bindings {
-                logger.debug("   - SSID: \(binding.ssid), 控制器IDs: \(binding.serverIds)")
+                logger.debug("   - SSID: \(binding.ssid), 控制器: \(describeServers(binding.serverIds))")
             }
         } else {
             logger.warning("无法从 UserDefaults 加载 Wi-Fi 绑定数据")
@@ -87,7 +120,7 @@ class WiFiBindingManager: ObservableObject {
             defaults.set(data, forKey: storageKey)
             logger.info("保存 Wi-Fi 绑定到 UserDefaults: \(bindings.count) 个")
             for binding in bindings {
-                logger.debug("   - SSID: \(binding.ssid), 控制器IDs: \(binding.serverIds)")
+                logger.debug("   - SSID: \(binding.ssid), 控制器: \(describeServers(binding.serverIds))")
             }
         } else {
             logger.error("保存 Wi-Fi 绑定失败")
@@ -100,7 +133,7 @@ class WiFiBindingManager: ObservableObject {
             return
         }
         
-        logger.info("添加新的 Wi-Fi 绑定: SSID=\(binding.ssid), 控制器IDs=\(binding.serverIds)")
+        logger.info("添加新的 Wi-Fi 绑定: SSID=\(binding.ssid), 控制器=\(describeServers(binding.serverIds))")
         bindings.append(binding)
         saveBindings()
         objectWillChange.send()
@@ -113,7 +146,7 @@ class WiFiBindingManager: ObservableObject {
             return
         }
         
-        logger.info("更新 Wi-Fi 绑定: SSID=\(binding.ssid), 控制器IDs=\(binding.serverIds)")
+        logger.info("更新 Wi-Fi 绑定: SSID=\(binding.ssid), 控制器=\(describeServers(binding.serverIds))")
         if let index = bindings.firstIndex(where: { $0.id == binding.id }) {
             var newBindings = bindings
             newBindings[index] = binding

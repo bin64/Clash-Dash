@@ -351,14 +351,22 @@ struct SidebarView: View {
     private func updateWiFiStatus() {
         if enableWiFiBinding {
             NEHotspotNetwork.fetchCurrent { network in
-                if let network = network {
-                    currentWiFiSSID = network.ssid
-                } else {
-                    currentWiFiSSID = ""
+                DispatchQueue.main.async {
+                    if let network = network {
+                        currentWiFiSSID = network.ssid
+                        UserDefaults.standard.set(network.ssid, forKey: "current_ssid")
+                        viewModel.logWiFiBindingSummary(currentWiFiSSID: network.ssid)
+                    } else {
+                        currentWiFiSSID = ""
+                        UserDefaults.standard.set("", forKey: "current_ssid")
+                        viewModel.logWiFiBindingSummary(currentWiFiSSID: "")
+                    }
                 }
             }
         } else {
             currentWiFiSSID = ""
+            UserDefaults.standard.set("", forKey: "current_ssid")
+            viewModel.logWiFiBindingSummary(currentWiFiSSID: "")
         }
     }
 }

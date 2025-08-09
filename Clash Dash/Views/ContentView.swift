@@ -420,17 +420,24 @@ struct ContentView: View {
             // 获取当前 Wi-Fi SSID
             if enableWiFiBinding {
                 NEHotspotNetwork.fetchCurrent { network in
-                    if let network = network {
-                        logger.debug("检测到 Wi-Fi: \(network.ssid)")
-                        currentWiFiSSID = network.ssid
-                    } else {
-                        logger.debug("未检测到 Wi-Fi 连接")
-                        currentWiFiSSID = ""
+                    DispatchQueue.main.async {
+                        if let network = network {
+                            logger.debug("检测到 Wi-Fi: \(network.ssid)")
+                            currentWiFiSSID = network.ssid
+                            UserDefaults.standard.set(network.ssid, forKey: "current_ssid")
+                            viewModel.logWiFiBindingSummary(currentWiFiSSID: network.ssid)
+                        } else {
+                            logger.debug("未检测到 Wi-Fi 连接")
+                            currentWiFiSSID = ""
+                            UserDefaults.standard.set("", forKey: "current_ssid")
+                            viewModel.logWiFiBindingSummary(currentWiFiSSID: "")
+                        }
                     }
                 }
             } else {
                 logger.debug("Wi-Fi 绑定功能未启用，跳过获取 Wi-Fi 信息")
                 currentWiFiSSID = ""
+                UserDefaults.standard.set("", forKey: "current_ssid")
             }
             
             // 首次打开时刷新服务器列表
@@ -447,7 +454,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
-                // print("🔄 应用进入活动状态")
+                // print("应用进入活动状态")
                 // 从后台返回前台时刷新服务器列表和 Wi-Fi 状态
                 Task {
                     await viewModel.checkAllServersStatus()
@@ -456,17 +463,24 @@ struct ContentView: View {
                 // 更新当前 Wi-Fi SSID
                 if enableWiFiBinding {
                     NEHotspotNetwork.fetchCurrent { network in
-                        if let network = network {
-                            // print("📡 检测到 Wi-Fi (后台恢复): \(network.ssid)")
-                            currentWiFiSSID = network.ssid
-                        } else {
-                            // print("❌ 未检测到 Wi-Fi 连接 (后台恢复)")
-                            currentWiFiSSID = ""
+                        DispatchQueue.main.async {
+                            if let network = network {
+                                // print("📡 检测到 Wi-Fi (后台恢复): \(network.ssid)")
+                                currentWiFiSSID = network.ssid
+                                UserDefaults.standard.set(network.ssid, forKey: "current_ssid")
+                                viewModel.logWiFiBindingSummary(currentWiFiSSID: network.ssid)
+                            } else {
+                                // print("未检测到 Wi-Fi 连接 (后台恢复)")
+                                currentWiFiSSID = ""
+                                UserDefaults.standard.set("", forKey: "current_ssid")
+                                viewModel.logWiFiBindingSummary(currentWiFiSSID: "")
+                            }
                         }
                     }
                 } else {
-                    // print("⚠️ Wi-Fi 绑定功能未启用，跳过获取 Wi-Fi 信息")
+                    // print("Wi-Fi 绑定功能未启用，跳过获取 Wi-Fi 信息")
                     currentWiFiSSID = ""
+                    UserDefaults.standard.set("", forKey: "current_ssid")
                 }
             }
         }
@@ -475,17 +489,24 @@ struct ContentView: View {
             if newValue {
                 // 功能启用时获取 Wi-Fi 信息
                 NEHotspotNetwork.fetchCurrent { network in
-                    if let network = network {
-                        // print("📡 检测到 Wi-Fi (功能启用): \(network.ssid)")
-                        currentWiFiSSID = network.ssid
-                    } else {
-                        // print("❌ 未检测到 Wi-Fi 连接 (功能启用)")
-                        currentWiFiSSID = ""
+                    DispatchQueue.main.async {
+                        if let network = network {
+                            // print("📡 检测到 Wi-Fi (功能启用): \(network.ssid)")
+                            currentWiFiSSID = network.ssid
+                            UserDefaults.standard.set(network.ssid, forKey: "current_ssid")
+                            viewModel.logWiFiBindingSummary(currentWiFiSSID: network.ssid)
+                        } else {
+                            // print("未检测到 Wi-Fi 连接 (功能启用)")
+                            currentWiFiSSID = ""
+                            UserDefaults.standard.set("", forKey: "current_ssid")
+                            viewModel.logWiFiBindingSummary(currentWiFiSSID: "")
+                        }
                     }
                 }
             } else {
-                print("⚠️ Wi-Fi 绑定功能已禁用，清空 Wi-Fi 信息")
+                print("Wi-Fi 绑定功能已禁用，清空 Wi-Fi 信息")
                 currentWiFiSSID = ""
+                UserDefaults.standard.set("", forKey: "current_ssid")
             }
         }
         // 添加对 WiFiBindingManager 变化的监听
@@ -494,14 +515,14 @@ struct ContentView: View {
             logger.debug("Wi-Fi 绑定发生变化，新的绑定数量: \(newBindings.count)")
             // 强制刷新 filteredServers
             withAnimation {
-                // print("🔄 触发强制刷新")
+                // print("触发强制刷新")
                 forceRefresh.toggle()  // 切换强制刷新标志
             }
             // 刷新服务器状态
             Task {
-                // print("🔄 开始刷新服务器状态")
+                // print("开始刷新服务器状态")
                 await viewModel.checkAllServersStatus()
-                // print("✅ 服务器状态刷新完成")
+                // print("服务器状态刷新完成")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ControllersUpdated"))) { _ in

@@ -177,7 +177,7 @@ struct RestartServiceView: View {
                 
                 // 如果超时，添加提示信息
                 withAnimation {
-                    logs.append("⚠️ 获取日志超时，请自行检查服务状态")
+                    logs.append("获取日志超时，请自行检查服务状态")
                 }
             } else {
                 // mihomoTProxy
@@ -203,7 +203,7 @@ struct RestartServiceView: View {
                 
                 // 3. 重启服务
                 withAnimation {
-                    logs.append("🔄 重启 \(isNikki ? "Nikki" : "Mihomo") 服务...")
+                    logs.append("重启 \(isNikki ? "Nikki" : "Mihomo") 服务...")
                 }
                 let restartCmd = "/etc/init.d/\(packageName) restart"
                 _ = try await makeUCIRequest(server, token: token, method: "sys", params: ["exec", [restartCmd]])
@@ -238,7 +238,7 @@ struct RestartServiceView: View {
                             // 检查启动成功标记
                             if log.contains("[App] Start Successful") {
                                 withAnimation {
-                                    logs.append("✅ \(isNikki ? "Nikki" : "Mihomo") 服务已完全启动")
+                                    logs.append("\(isNikki ? "Nikki" : "Mihomo") 服务已完全启动")
                                 }
                                 isRestartSuccessful = true
                                 isRestarting = false
@@ -259,7 +259,7 @@ struct RestartServiceView: View {
                 
                 // 如果超时，添加提示信息
                 withAnimation {
-                    logs.append("⚠️ 获取日志超时，请自行检查服务状态")
+                    logs.append("获取日志超时，请自行检查服务状态")
                 }
             }
             

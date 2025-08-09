@@ -165,7 +165,7 @@ class LogViewModel: ObservableObject {
         currentServer = server
         
         guard let request = makeWebSocketRequest(server: server) else {
-            // print("❌ 无法创建 WebSocket 请求")
+            // print("无法创建 WebSocket 请求")
             logger.error("无法创建 WebSocket 请求")
             return
         }
@@ -187,7 +187,7 @@ class LogViewModel: ObservableObject {
         // 只在非取消错误时处理
         guard !error.isCancellationError else { return }
         
-        // print("❌ WebSocket 错误: \(error.localizedDescription)")
+        // print("WebSocket 错误: \(error.localizedDescription)")
         logger.error("WebSocket 错误: \(error.localizedDescription)")
         
         DispatchQueue.main.async { [weak self] in
@@ -201,14 +201,14 @@ class LogViewModel: ObservableObject {
                 if let urlError = error as? URLError {
                     switch urlError.code {
                     case .secureConnectionFailed, .serverCertificateUntrusted:
-                        // print("❌ SSL/证书错误，停止重连")
+                        // print("SSL/证书错误，停止重连")
                         logger.error("SSL/证书错误，停止重连")
                         self.connectionRetryCount = self.maxRetryCount
                     default:
                         if self.connectionRetryCount < self.maxRetryCount {
                             self.reconnect()
                         } else {
-                            // print("⚠️ 达到最大重试次数，停止重连")
+                            // print("达到最大重试次数，停止重连")
                             logger.warning("达到最大重试次数，停止重连")
                         }
                     }
@@ -216,7 +216,7 @@ class LogViewModel: ObservableObject {
                     if self.connectionRetryCount < self.maxRetryCount {
                         self.reconnect()
                     } else {
-                        // print("⚠️ 达到最大重试次数，停止重连")
+                        // print("达到最大重试次数，停止重连")
                         logger.warning("达到最大重试次数，停止重连")
                     }
                 }
@@ -310,7 +310,7 @@ class LogViewModel: ObservableObject {
         
         connectionRetryCount += 1
         
-        // print("🔄 准备重新连接... (第 \(connectionRetryCount) 次重试)")
+        // print("准备重新连接... (第 \(connectionRetryCount) 次重试)")
         logger.info("准备重新连接... (第 \(connectionRetryCount) 次重试)")
         
         reconnectTask = Task { [weak self] in

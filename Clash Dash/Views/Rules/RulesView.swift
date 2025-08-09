@@ -138,7 +138,7 @@ struct RulesView: View {
                     .padding(.bottom, floatingTabBarVisible ? 168 : 80)  // 给搜索按钮留出空间，考虑浮动标签栏
                     .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
                     .onChange(of: floatingTabBarVisible) { newValue in
-                        print("🔄 更新全部按钮 - 浮动标签栏可见性变化: \(newValue)")
+                        print("更新全部按钮 - 浮动标签栏可见性变化: \(newValue)")
                     }
                 }
             }

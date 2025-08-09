@@ -34,6 +34,14 @@ enum ConnectivityTestResult {
     case inProgress
 }
 
+// 汇总单个网站测试结果用于统一日志输出
+struct WebsiteTestSummary {
+    let name: String
+    let usedProxy: Bool
+    let statusText: String   // 例如: "200" 或 "失败(404)" 或 "未收到HTTP响应"
+    let durationSeconds: Double
+}
+
 class ConnectivityViewModel: ObservableObject {
     // 默认网站列表定义
     private let defaultWebsites: [WebsiteStatus] = [
@@ -66,10 +74,10 @@ class ConnectivityViewModel: ObservableObject {
     
     init() {
         // 初始化网站列表
-        logger.debug("🌐 初始化ConnectivityViewModel")
+        // logger.debug("初始化ConnectivityViewModel")
         for website in defaultWebsites {
             if let fixedId = fixedWebsiteIds[website.name] {
-                logger.debug("🔄 添加固定ID网站: \(website.name) (ID: \(fixedId))")
+                // logger.debug("添加固定ID网站: \(website.name) (ID: \(fixedId))")
                 websites.append(WebsiteStatus(
                     id: fixedId,
                     name: website.name,
@@ -77,11 +85,11 @@ class ConnectivityViewModel: ObservableObject {
                     icon: website.icon
                 ))
             } else {
-                logger.debug("🔄 添加动态ID网站: \(website.name)")
+                // logger.debug("添加动态ID网站: \(website.name)")
                 websites.append(website)
             }
         }
-        logger.debug("✅ 初始化完成，共\(websites.count)个网站")
+        // logger.debug("初始化完成，共\(websites.count)个网站")
     }
     
     // 通过设置服务器信息来准备测试环境
@@ -90,7 +98,7 @@ class ConnectivityViewModel: ObservableObject {
         let previousPort = self.httpPort
         
         logger.debug("🔧 设置服务器信息 - URL: \(server.url), HTTP端口: \(httpPort)")
-        logger.debug("🔄 更新前: 服务器 \(previousServer), 端口: \(previousPort)")
+        logger.debug("更新前: 服务器 \(previousServer), 端口: \(previousPort)")
         
         self.clashServer = server
         
@@ -98,10 +106,10 @@ class ConnectivityViewModel: ObservableObject {
         if httpPort.isEmpty || httpPort == "0" {
             if let settings = settingsViewModel, !settings.mixedPort.isEmpty, settings.mixedPort != "0" {
                 self.httpPort = settings.mixedPort
-                logger.debug("⚠️ HTTP端口无效，使用mixedPort: \(settings.mixedPort)")
+                logger.debug("HTTP端口无效，使用mixedPort: \(settings.mixedPort)")
             } else {
                 self.httpPort = httpPort
-                logger.debug("⚠️ 注意: HTTP端口为空或为0，这可能导致代理测试失败")
+                logger.debug("注意: HTTP端口为空或为0，这可能导致代理测试失败")
             }
         } else {
             self.httpPort = httpPort
@@ -111,9 +119,8 @@ class ConnectivityViewModel: ObservableObject {
     // 测试代理是否可用
     private func testProxyAvailability() async -> Bool {
         guard let server = clashServer, !httpPort.isEmpty, Int(httpPort) ?? 0 > 0 else {
-            logger.debug("❌ 代理测试失败: 服务器或端口设置无效")
-            logger.debug("⚠️ 当前服务器: \(clashServer?.url ?? "未设置")")
-            logger.debug("⚠️ 当前HTTP端口: \(httpPort)")
+            let serverText = clashServer?.url ?? "未设置"
+            logger.info("代理测试结果: 无效配置 - 服务器: \(serverText), 端口: \(httpPort.isEmpty ? "未设置" : httpPort)")
             return false
         }
         
@@ -121,7 +128,7 @@ class ConnectivityViewModel: ObservableObject {
         let proxyHost = server.url.replacingOccurrences(of: "http://", with: "")
                                  .replacingOccurrences(of: "https://", with: "")
         let proxyPort = Int(httpPort) ?? 0
-        logger.debug("🔍 测试代理可用性 - 主机: \(proxyHost), 端口: \(proxyPort)")
+        // logger.debug("🔍 测试代理可用性 - 主机: \(proxyHost), 端口: \(proxyPort)")
         
         // 创建配置了代理的URLSession
         let config = URLSessionConfiguration.ephemeral
@@ -137,7 +144,7 @@ class ConnectivityViewModel: ObservableObject {
 //            kCFNetworkProxiesHTTPSPort: proxyPort
         ]
         config.connectionProxyDictionary = proxyDict as? [String: Any]
-        logger.debug("📝 完整代理设置: \(proxyDict)")
+        // logger.debug("📝 完整代理设置: \(proxyDict)")
         
         // 其他重要配置
         config.timeoutIntervalForRequest = 10
@@ -153,11 +160,15 @@ class ConnectivityViewModel: ObservableObject {
             "http://www.ifeng.com"
         ]
         
-        logger.debug("🔄 开始测试代理连接...")
+        // logger.debug("开始测试代理连接...")
+        
+        var rows: [[String]] = [] // [目标, 状态/码, 耗时]
+        var available = false
         
         for testUrl in testUrls {
+            let hostLabel = URL(string: testUrl)?.host ?? testUrl
             do {
-                logger.debug("🌐 尝试访问: \(testUrl)")
+                // logger.debug("尝试访问: \(testUrl)")
                 var request = URLRequest(url: URL(string: testUrl)!)
                 request.timeoutInterval = 8
                 request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -167,27 +178,37 @@ class ConnectivityViewModel: ObservableObject {
                 let duration = Date().timeIntervalSince(startTime)
                 
                 if let httpResponse = response as? HTTPURLResponse {
-                    logger.debug("📊 [代理测试] 响应状态码: \(httpResponse.statusCode), 耗时: \(String(format: "%.2f", duration))秒")
-                    if (200...299).contains(httpResponse.statusCode) {
-                        logger.debug("✅ 代理测试成功!")
-                        return true
+                    let status = httpResponse.statusCode
+                    if (200...299).contains(status) {
+                        available = true
                     }
+                    rows.append([hostLabel, "\(status)", "\(String(format: "%.2f", duration))s"])
+                    if available { break }
+                } else {
+                    rows.append([hostLabel, "非HTTP响应", "\(String(format: "%.2f", duration))s"])
                 }
             } catch {
-                logger.debug("❌ 尝试代理访问\(testUrl)失败: \(error.localizedDescription)")
+                let urlError = error as? URLError
+                let nsError = error as NSError
+                let codeText = urlError != nil ? "失败(\(urlError!.code.rawValue))" : "失败(\(nsError.code))"
+                rows.append([hostLabel, codeText, "8.00s"])
             }
         }
         
-        logger.debug("❌ 所有代理测试网站都失败，可能原因:")
-        logger.debug("  - 代理端口\(proxyPort)可能不正确")
-        logger.debug("  - 代理服务器\(proxyHost)可能未运行")
-        logger.debug("  - 网络连接可能有问题")
-        return false
+        let header = "代理测试结果[\(proxyHost):\(proxyPort)]: \(available ? "可用" : "不可用")"
+        let table = formatColumns(headers: ["目标", "状态/码", "耗时"], rows: rows)
+        logger.info("\(header)\n\(table)")
+        
+        // logger.debug("所有代理测试网站都失败，可能原因:")
+        // logger.debug("  - 代理端口\(proxyPort)可能不正确")
+        // logger.debug("  - 代理服务器\(proxyHost)可能未运行")
+        // logger.debug("  - 网络连接可能有问题")
+        return available
     }
     
     // 一次测试所有网站
     func testAllConnectivity() {
-        logger.debug("🔄 开始测试所有网站")
+        // logger.debug("开始测试所有网站")
         Task { @MainActor in
             isTestingAll = true
             
@@ -197,67 +218,79 @@ class ConnectivityViewModel: ObservableObject {
             }
             
             // 然后测试代理可用性
-            logger.debug("🔍 测试代理可用性...")
+            // logger.debug("🔍 测试代理可用性...")
             let proxyAvailable = await testProxyAvailability()
             isUsingProxy = proxyAvailable
             proxyTested = true
-            logger.debug("📝 代理可用性测试结果: \(proxyAvailable ? "可用" : "不可用")")
+            // logger.debug("📝 代理可用性测试结果: \(proxyAvailable ? "可用" : "不可用")")
             
-            // 依次测试所有网站
+            // 依次测试所有网站（仅输出最终摘要）
+            var summaries: [WebsiteTestSummary] = []
             for index in websites.indices {
-                logger.debug("🔄 测试网站 [\(index)]: \(websites[index].name)")
-                await testSingleWebsite(index: index, useProxy: proxyAvailable)
+                if let summary = await testSingleWebsite(index: index, useProxy: proxyAvailable) {
+                    summaries.append(summary)
+                }
             }
             
+            // 统一输出一条日志（表格对齐）
+            let headers = ["站点", "方式", "状态/码", "耗时"]
+            let rows = summaries.map { s in
+                [s.name, (s.usedProxy ? "代理" : "直连"), s.statusText, String(format: "%.2f", s.durationSeconds) + "s"]
+            }
+            let table = formatColumns(headers: headers, rows: rows)
+            logger.info("连通性结果\n\(table)")
+            
             isTestingAll = false
-            logger.debug("✅ 所有网站测试完成")
+            // logger.debug("所有网站测试完成")
         }
     }
     
     // 测试单个网站连通性
     func testConnectivity(for index: Int) {
         guard index < websites.count else {
-            logger.error("❌ 无效的网站索引: \(index)")
+            logger.error("无效的网站索引: \(index)")
             return
         }
         
-        logger.debug("🔄 开始测试网站: \(websites[index].name)")
         Task { @MainActor in
             // 设置当前网站为正在检测状态
             websites[index].isChecking = true
             websites[index].error = nil
             
             // 先测试代理可用性
-            logger.debug("🔍 测试代理可用性...")
             let proxyAvailable = await testProxyAvailability()
             isUsingProxy = proxyAvailable
-            logger.debug("📝 代理可用性测试结果: \(proxyAvailable ? "可用" : "不可用")")
             
-            // 测试网站连通性
-            await testSingleWebsite(index: index, useProxy: proxyAvailable)
+            // 测试网站连通性（仅输出最终摘要，表格对齐）
+            if let summary = await testSingleWebsite(index: index, useProxy: proxyAvailable) {
+                let headers = ["站点", "方式", "状态/码", "耗时"]
+                let rows = [[summary.name, (summary.usedProxy ? "代理" : "直连"), summary.statusText, String(format: "%.2f", summary.durationSeconds) + "s"]]
+                let table = formatColumns(headers: headers, rows: rows)
+                logger.info("连通性结果\n\(table)")
+            }
         }
     }
     
     // 测试单个网站的实际逻辑
-    private func testSingleWebsite(index: Int, useProxy: Bool) async {
+    private func testSingleWebsite(index: Int, useProxy: Bool) async -> WebsiteTestSummary? {
         guard index < websites.count else {
-            logger.debug("❌ 测试单个网站时索引无效: \(index)")
-            return
+            logger.debug("测试单个网站时索引无效: \(index)")
+            return nil
         }
         
         let website = websites[index]
-        logger.debug("🔄 测试网站: \(website.name), URL: \(website.url), 使用代理: \(useProxy)")
         
         guard let url = URL(string: website.url) else {
-            logger.debug("❌ 无效的URL: \(website.url)")
             await MainActor.run {
                 websites[index].isChecking = false
                 websites[index].isConnected = false
                 websites[index].error = "无效的URL"
                 websites[index].usedProxy = false
             }
-            return
+            return WebsiteTestSummary(name: website.name, usedProxy: false, statusText: "无效URL", durationSeconds: 0)
         }
+        
+        let startTime = Date()
         
         do {
             var session: URLSession
@@ -277,29 +310,23 @@ class ConnectivityViewModel: ObservableObject {
                 ]
                 config.connectionProxyDictionary = proxyDict as? [String: Any]
                 session = URLSession(configuration: config)
-                logger.debug("📝 使用代理配置: 主机: \(proxyHost), 端口: \(proxyPort)")
             } else {
                 // 使用普通URLSession
                 session = URLSession.shared
-                logger.debug("📝 使用直接连接")
             }
             
             // 创建请求并设置超时
             var request = URLRequest(url: url)
             request.timeoutInterval = 5
-            logger.debug("🔄 发送请求到: \(url), 超时: 5秒")
             
             // 执行请求
-            let startTime = Date()
-            let (_, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request)
+            _ = data
             let duration = Date().timeIntervalSince(startTime)
-            logger.debug("⏱️ 请求耗时: \(String(format: "%.2f", duration))秒")
             
             // 检查响应状态
             if let httpResponse = response as? HTTPURLResponse {
                 let statusCode = httpResponse.statusCode
-                logger.debug("📊 HTTP响应状态码: \(statusCode)")
-                
                 if (200...299).contains(statusCode) {
                     await MainActor.run {
                         websites[index].isChecking = false
@@ -307,50 +334,59 @@ class ConnectivityViewModel: ObservableObject {
                         websites[index].error = nil
                         websites[index].usedProxy = useProxy
                     }
-                    logger.debug("✅ 连接成功: \(website.name)")
+                    return WebsiteTestSummary(name: website.name, usedProxy: useProxy, statusText: "\(statusCode)", durationSeconds: duration)
                 } else {
                     throw NSError(domain: "HTTPError", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP错误: \(statusCode)"])
                 }
             } else {
-                logger.debug("❓ 未收到HTTP响应")
-                throw NSError(domain: "HTTPError", code: 0, userInfo: [NSLocalizedDescriptionKey: "未收到HTTP响应"])
+                throw NSError(domain: "HTTPError", code: 0, userInfo: [NSLocalizedDescriptionKey: "未收到HTTP响应"])        
             }
         } catch {
-            logger.debug("❌ 连接失败: \(website.name), 错误: \(error.localizedDescription)")
+            let duration = Date().timeIntervalSince(startTime)
             await MainActor.run {
                 websites[index].isChecking = false
                 websites[index].isConnected = false
                 websites[index].error = error.localizedDescription
                 websites[index].usedProxy = useProxy
             }
+            let nsError = error as NSError
+            let statusText: String
+            if nsError.domain == "HTTPError" {
+                statusText = "失败(\(nsError.code))"
+            } else if let urlError = error as? URLError {
+                statusText = "失败(\(urlError.code.rawValue))"
+            } else {
+                statusText = "失败"
+            }
+            return WebsiteTestSummary(name: website.name, usedProxy: useProxy, statusText: statusText, durationSeconds: duration)
         }
     }
     
     // 加载网站可见性设置和顺序设置
     func loadWebsiteVisibility() {
-        logger.debug("🔄 加载网站可见性设置")
+        // logger.debug("加载网站可见性设置")
         // 获取可见性设置
         var websiteVisibility: [String: Bool] = [:]
         if let savedVisibility = try? JSONDecoder().decode([String: Bool].self, from: connectivityWebsiteVisibilityData) {
             websiteVisibility = savedVisibility
-            logger.debug("📝 读取到可见性设置: \(websiteVisibility)")
+            // logger.debug("📝 读取到可见性设置: \(websiteVisibility)")
         } else {
             // 默认所有网站都可见
             for website in defaultWebsites {
                 websiteVisibility[website.name] = true
             }
-            logger.debug("📝 使用默认可见性设置")
+            // logger.debug("📝 使用默认可见性设置")
         }
         
         // 获取顺序设置
         var websiteOrder: [UUID] = []
         if let savedOrder = try? JSONDecoder().decode([UUID].self, from: connectivityWebsiteOrderData) {
             websiteOrder = savedOrder
-            logger.debug("📝 读取到顺序设置: \(websiteOrder)")
+            // logger.debug("📝 读取到顺序设置: \(websiteOrder)")
         } else {
             // 默认使用原始顺序
             websiteOrder = defaultWebsites.map { $0.id }
-            logger.debug("📝 使用默认顺序设置")
+            // logger.debug("📝 使用默认顺序设置")
         }
         
         // 根据顺序和可见性设置网站列表
@@ -370,7 +406,7 @@ class ConnectivityViewModel: ObservableObject {
                 // 只添加可见的网站
                 if websiteVisibility[website.name] ?? true {
                     orderedWebsites.append(website)
-                    logger.debug("📋 添加有序网站: \(website.name)")
+                    // logger.debug("📋 添加有序网站: \(website.name)")
                 }
             }
         }
@@ -379,11 +415,11 @@ class ConnectivityViewModel: ObservableObject {
         for website in baseWebsites {
             if !websiteOrder.contains(website.id) && (websiteVisibility[website.name] ?? true) {
                 orderedWebsites.append(website)
-                logger.debug("📋 添加额外可见网站: \(website.name)")
+                // logger.debug("📋 添加额外可见网站: \(website.name)")
             }
         }
         
-        logger.debug("✅ 最终加载的网站数量: \(orderedWebsites.count)")
+        logger.debug("最终加载的网站数量: \(orderedWebsites.count)")
         
         // 更新网站列表，保持连接状态
         DispatchQueue.main.async {
@@ -400,20 +436,20 @@ class ConnectivityViewModel: ObservableObject {
                 }
                 return newSite
             }
-            logger.debug("✅ 网站列表更新完成")
+            logger.debug("网站列表更新完成")
         }
     }
     
     // 重置所有网站状态为初始状态（未检测状态）
     func resetWebsiteStatus() {
-        logger.debug("🔄 重置所有网站状态")
+        logger.debug("重置所有网站状态")
         for website in websites {
             website.isChecking = false
             website.isConnected = false
             website.error = nil
             website.usedProxy = false
         }
-        logger.debug("✅ 网站状态重置完成")
+        logger.debug("网站状态重置完成")
     }
     
     // 保存的设置
@@ -421,20 +457,34 @@ class ConnectivityViewModel: ObservableObject {
     @AppStorage("connectivityWebsiteOrder") private var connectivityWebsiteOrderData: Data = Data()
     @AppStorage("connectivityTimeout") private var connectivityTimeout: Double = 10.0
     
+    // 通用表格格式化：根据列头和行内容自动对齐列宽
+    private func formatColumns(headers: [String], rows: [[String]]) -> String {
+        guard !headers.isEmpty else { return rows.map { $0.joined(separator: " ") }.joined(separator: "\n") }
+        let columnCount = headers.count
+        var widths = Array(repeating: 0, count: columnCount)
+        for (i, h) in headers.enumerated() { widths[i] = max(widths[i], h.count) }
+        for row in rows { for (i, cell) in row.enumerated() where i < columnCount { widths[i] = max(widths[i], cell.count) } }
+        func pad(_ text: String, _ width: Int) -> String { text + String(repeating: " ", count: max(0, width - text.count)) }
+        let headerLine = zip(headers, widths).map { pad($0.0, $0.1) }.joined(separator: "  ")
+        let separator = widths.map { String(repeating: "-", count: $0) }.joined(separator: "  ")
+        let body = rows.map { row in
+            zip(row + Array(repeating: "", count: max(0, columnCount - row.count)), widths).map { pad($0.0, $0.1) }.joined(separator: "  ")
+        }.joined(separator: "\n")
+        return headerLine + "\n" + separator + "\n" + body
+    }
+    
     // 修改代理信息诊断方法
     func getProxyDiagnostics() {
         guard let server = clashServer else {
-            logger.error("未设置服务器信息")
+            logger.error("未设置控制器信息")
             return
         }
         
-        logger.error("=== 代理配置 ===")
-        logger.error("服务器: \(server.url)")
-        logger.error("端口: \(httpPort.isEmpty ? "未设置" : httpPort)")
+        logger.error("=== 代理配置 === 控制器: \(server.url) 端口: \(httpPort.isEmpty ? "未设置" : httpPort)")
         
         // 添加其他诊断信息
         if let port = Int(httpPort), port <= 0 {
-            logger.error("⚠️ 端口必须大于0")
+            logger.error("端口必须大于0")
         }
     }
     
@@ -449,13 +499,13 @@ class ConnectivityViewModel: ObservableObject {
         getProxyDiagnostics()
         
         guard let server = clashServer else { 
-            logger.error("❌ 服务器未设置")
+            logger.error("服务器未设置")
             return 
         }
         
         // 尝试从服务器获取HTTP端口
         Task {
-            logger.debug("🔄 开始获取服务器配置...")
+            logger.debug("开始获取服务器配置...")
             // 模拟从服务器获取配置
             // 这里是演示，您需要实际实现一个方法从服务器获取HTTP端口
             
