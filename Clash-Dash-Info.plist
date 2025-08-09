@@ -23,6 +23,8 @@
 		<string>_bonjour._tcp</string>
 		<string>_lnp._tcp.</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>需要访问本地网络以连接和管理 Clash 控制器</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>需要访问位置信息以在地图上显示连接位置</string>
 	<key>NSLocationAlwaysUsageDescription</key>
@@ -30,7 +32,7 @@
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
 	<dict>
 		<key>WiFiAccess</key>
-		<string>需要访问位置信息以获取当前 Wi-Fi 网络名称</string>
+		<string>需要访问位置信息以获取当前 Wi‑Fi 网络名称</string>
 	</dict>
 	<key>NSLocationUsageDescription</key>
 	<string>需要访问位置信息以在地图上显示连接位置</string>
