@@ -9,6 +9,16 @@ struct ClientTagView: View {
     @State private var showingManualAddSheet = false
     @State private var manualIP = ""
     
+    // 紧凑筛选
+    enum TagFilter: String, CaseIterable, Identifiable {
+        case all = "全部"
+        case saved = "标签"
+        case active = "活跃"
+        case offline = "离线"
+        var id: String { rawValue }
+    }
+    @State private var selectedFilter: TagFilter = .all
+    
     private var uniqueActiveConnections: [ClashConnection] {
         let activeConnections = viewModel.connections.filter { $0.isAlive }
         var uniqueIPs: Set<String> = []
@@ -68,47 +78,87 @@ struct ClientTagView: View {
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color(uiColor: .systemGroupedBackground)
-                    .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 16) {
-                        searchBar
-                            .padding(.horizontal)
-                        
-                        if !filteredTags.isEmpty {
-                            savedTagsSection
+            List {
+                // 筛选器（分段控件）
+                Section {
+                    Picker("筛选", selection: $selectedFilter) {
+                        ForEach(TagFilter.allCases) { filter in
+                            Text(filter.rawValue).tag(filter)
                         }
-                        
-                        if !filteredConnections.isEmpty {
-                            activeConnectionsSection
-                        }
-                        
-                        if !filteredOfflineConnections.isEmpty {
-                            offlineConnectionsSection
-                        }
-                        
-                        if filteredTags.isEmpty && filteredConnections.isEmpty && filteredOfflineConnections.isEmpty {
-                            emptyStateView
-                        }
-                        
-                        addManualTagButton
-                            .padding(.top, 20)
-                            .padding(.horizontal)
                     }
-                    .padding(.vertical, 12)
+                    .pickerStyle(.segmented)
+                }
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                
+                // 已保存标签
+                if (selectedFilter == .all || selectedFilter == .saved), !filteredTags.isEmpty {
+                    Section {
+                        ForEach(filteredTags) { tag in
+                            ClientTagRow(tag: tag) {
+                                tagViewModel.editTag(tag)
+                            } onDelete: {
+                                tagViewModel.removeTag(tag)
+                            }
+                        }
+                    } header: {
+                        ClientTagSectionHeader(title: "已保存标签", count: filteredTags.count, systemImage: "tag.fill")
+                    }
+                }
+                
+                // 活跃连接
+                if (selectedFilter == .all || selectedFilter == .active), !filteredConnections.isEmpty {
+                    Section {
+                        ForEach(filteredConnections) { connection in
+                            ActiveConnectionRow(connection: connection) {
+                                tagViewModel.showAddTagSheet(for: connection.metadata.sourceIP)
+                            }
+                        }
+                    } header: {
+                        ClientTagSectionHeader(title: "活跃连接", count: filteredConnections.count, systemImage: "network")
+                    }
+                }
+                
+                // 离线设备
+                if (selectedFilter == .all || selectedFilter == .offline), !filteredOfflineConnections.isEmpty {
+                    Section {
+                        ForEach(filteredOfflineConnections) { tag in
+                            OfflineDeviceRow(tag: tag) {
+                                tagViewModel.editTag(tag)
+                            }
+                        }
+                    } header: {
+                        ClientTagSectionHeader(title: "离线设备", count: filteredOfflineConnections.count, systemImage: "wifi.slash")
+                    }
+                }
+                
+                // 空态
+                if filteredTags.isEmpty && filteredConnections.isEmpty && filteredOfflineConnections.isEmpty {
+                    Section {
+                        VStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 36))
+                                .foregroundColor(.secondary)
+                            Text("未找到匹配结果")
+                                .font(.callout)
+                                .foregroundColor(.secondary)
+                                .padding(.bottom, 4)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 24)
+                        .listRowBackground(Color.clear)
+                    }
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("客户端标签")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "搜索标签或IP")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("关闭", role: .cancel) {
                         dismiss()
                     }
                 }
-                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingManualAddSheet = true
@@ -513,13 +563,17 @@ struct TagSheet: View {
     @ObservedObject var viewModel: ClientTagViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var tagName: String
+    @State private var ipText: String
     @FocusState private var isTextFieldFocused: Bool
+    private let editingTagId: UUID?
     
     init(ip: String, viewModel: ClientTagViewModel, mode: Mode) {
         self.ip = ip
         self.viewModel = viewModel
         self.mode = mode
         _tagName = State(initialValue: "")
+        _ipText = State(initialValue: ip)
+        self.editingTagId = nil
     }
     
     init(tag: ClientTag, viewModel: ClientTagViewModel, mode: Mode) {
@@ -527,8 +581,16 @@ struct TagSheet: View {
         self.viewModel = viewModel
         self.mode = mode
         _tagName = State(initialValue: tag.name)
+        _ipText = State(initialValue: tag.ip)
+        self.editingTagId = tag.id
     }
     
+    private var isSaveDisabled: Bool {
+        tagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        ipText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        viewModel.isIPInUse(ipText, excludingId: editingTagId)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -537,12 +599,15 @@ struct TagSheet: View {
                         .textInputAutocapitalization(.never)
                         .focused($isTextFieldFocused)
                     
-                    HStack {
-                        Text("IP地址")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(ip)
-                            .font(.system(.body, design: .monospaced))
+                    TextField("IP地址", text: $ipText)
+                        .keyboardType(.numbersAndPunctuation)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.body.monospaced())
+                    if viewModel.isIPInUse(ipText, excludingId: editingTagId) {
+                        Text("该 IP 已存在于标签中")
+                            .font(.footnote)
+                            .foregroundColor(.red)
                     }
                 } header: {
                     Text(mode == .add ? "添加新标签" : "编辑标签")
@@ -564,11 +629,11 @@ struct TagSheet: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("保存") {
-                        viewModel.saveTag(name: tagName, ip: ip)
+                        viewModel.saveTag(name: tagName, ip: ipText)
                         dismiss()
                     }
                     .fontWeight(.medium)
-                    .disabled(tagName.isEmpty)
+                    .disabled(isSaveDisabled)
                 }
             }
             .onAppear {
@@ -621,6 +686,7 @@ class ClientTagViewModel: ObservableObject {
             // 编辑现有标签
             if let index = tags.firstIndex(where: { $0.id == editingTag.id }) {
                 tags[index].name = name
+                tags[index].ip = ip
             }
         } else {
             // 添加新标签
@@ -644,6 +710,16 @@ class ClientTagViewModel: ObservableObject {
         tags.contains { $0.ip == ip }
     }
     
+    // 检查 IP 是否被占用（可排除某个正在编辑的标签）
+    func isIPInUse(_ ip: String, excludingId: UUID?) -> Bool {
+        let trimmed = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return tags.contains { tag in
+            if let excludingId = excludingId { return tag.id != excludingId && tag.ip == trimmed }
+            return tag.ip == trimmed
+        }
+    }
+    
     private func saveTags() {
         if let encoded = try? JSONEncoder().encode(tags) {
             UserDefaults.standard.set(encoded, forKey: saveKey)
@@ -654,6 +730,128 @@ class ClientTagViewModel: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: saveKey),
            let decoded = try? JSONDecoder().decode([ClientTag].self, from: data) {
             tags = decoded
+        }
+    }
+}
+
+//#pragma mark - 紧凑列表组件
+
+struct ClientTagSectionHeader: View {
+    let title: String
+    let count: Int
+    let systemImage: String
+    
+    var body: some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            Text("\(count)个")
+                .foregroundColor(.secondary)
+        }
+        .font(.subheadline)
+    }
+}
+
+struct ClientTagRow: View {
+    let tag: ClientTag
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.accentColor.opacity(0.1))
+                Image(systemName: "tag.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.accentColor)
+            }
+            .frame(width: 24, height: 24)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tag.name)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(tag.ip)
+                    .font(.footnote.monospaced())
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) { onDelete() } label: { Label("删除", systemImage: "trash") }
+            Button { onEdit() } label: { Label("编辑", systemImage: "pencil") }
+                .tint(.accentColor)
+        }
+    }
+}
+
+struct ActiveConnectionRow: View {
+    let connection: ClashConnection
+    let onAdd: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.green.opacity(0.12))
+                Image(systemName: "network")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.green)
+            }
+            .frame(width: 24, height: 24)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connection.metadata.sourceIP)
+                    .font(.body.monospaced())
+                    .lineLimit(1)
+                if let process = connection.metadata.process, !process.isEmpty {
+                    Text(process)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button { onAdd() } label: { Label("添加", systemImage: "plus") }
+                .tint(.blue)
+        }
+    }
+}
+
+struct OfflineDeviceRow: View {
+    let tag: ClientTag
+    let onEdit: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.gray.opacity(0.12))
+                Image(systemName: "wifi.slash")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.gray)
+            }
+            .frame(width: 24, height: 24)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tag.name)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(tag.ip)
+                    .font(.footnote.monospaced())
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .swipeActions(edge: .trailing) {
+            Button { onEdit() } label: { Label("编辑", systemImage: "pencil") }
+                .tint(.accentColor)
         }
     }
 }

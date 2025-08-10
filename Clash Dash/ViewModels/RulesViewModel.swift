@@ -131,13 +131,13 @@ class RulesViewModel: ObservableObject {
         guard let url = server.clashBaseURL?.appendingPathComponent("rules") else {
             throw URLError(.badURL)
         }
-        print("规则请求 URL: \(url.absoluteString)")
-        print("SSL设置: clashUseSSL = \(server.clashUseSSL)")
-        print("OpenWRT SSL设置: openWRTUseSSL = \(server.openWRTUseSSL)")
-        print("服务器类型: \(server.source.rawValue)")
-        print("服务器源: \(server.source)")
-        print("服务器 URL: \(server.url)")
-        print("服务器端口: \(server.port)")
+        // print("规则请求 URL: \(url.absoluteString)")
+        // print("SSL设置: clashUseSSL = \(server.clashUseSSL)")
+        // print("OpenWRT SSL设置: openWRTUseSSL = \(server.openWRTUseSSL)")
+        // print("服务器类型: \(server.source.rawValue)")
+        // print("服务器源: \(server.source)")
+        // print("服务器 URL: \(server.url)")
+        // print("服务器端口: \(server.port)")
         
         var request = try server.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -150,13 +150,13 @@ class RulesViewModel: ObservableObject {
         guard let url = server.clashBaseURL?.appendingPathComponent("providers/rules") else {
             throw URLError(.badURL)
         }
-        print("规则提供者请求 URL: \(url.absoluteString)")
-        print("SSL设置: clashUseSSL = \(server.clashUseSSL)")
-        print("OpenWRT SSL设置: openWRTUseSSL = \(server.openWRTUseSSL)")
-        print("服务器类型: \(server.source.rawValue)")
-        print("服务器源: \(server.source)")
-        print("服务器 URL: \(server.url)")
-        print("服务器端口: \(server.port)")
+        // print("规则提供者请求 URL: \(url.absoluteString)")
+        // print("SSL设置: clashUseSSL = \(server.clashUseSSL)")
+        // print("OpenWRT SSL设置: openWRTUseSSL = \(server.openWRTUseSSL)")
+        // print("服务器类型: \(server.source.rawValue)")
+        // print("服务器源: \(server.source)")
+        // print("服务器 URL: \(server.url)")
+        // print("服务器端口: \(server.port)")
         
         var request = try server.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
