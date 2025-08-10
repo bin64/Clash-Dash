@@ -410,12 +410,18 @@ struct ConnectionsView: View {
     
     // 修改菜单按钮部分
     var menuButtons: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: .trailing, spacing: 8) {
             if showMenu {
+                // 固定一个最小宽度以防元素长度差异导致主按钮横向被挤动
+                // 根据贴纸最宽可能值估算，保证主按钮位置稳定
+                Color.clear.frame(width: 1) // 保持对齐标记
+                    .frame(maxWidth: 0)
+
                 // 搜索按钮 - 添加到菜单的最上方
-                MenuButton(
+                StickerMenuButton(
+                    text: "搜索连接",
                     icon: "magnifyingglass",
-                    color: showSearch ? .green : .gray,
+                    tint: showSearch ? .green : .blue,
                     action: {
                         withAnimation {
                             showSearch.toggle()
@@ -431,9 +437,10 @@ struct ConnectionsView: View {
                 
                 // 如果有搜索结果，显示终止筛选连接的按钮
                 if !searchText.isEmpty && !filteredConnections.isEmpty {
-                    MenuButton(
+                    StickerMenuButton(
+                        text: "终止筛选",
                         icon: "xmark.circle",
-                        color: .red,
+                        tint: .red,
                         action: {
                             showCloseFilteredConfirmation = true
                         }
@@ -442,9 +449,10 @@ struct ConnectionsView: View {
                 }
                 
                 // 暂停/继续监控
-                MenuButton(
+                StickerMenuButton(
+                    text: viewModel.isMonitoring ? "暂停监控" : "继续监控",
                     icon: viewModel.isMonitoring ? "pause.fill" : "play.fill",
-                    color: .accentColor,
+                    tint: .accentColor,
                     action: {
                         viewModel.toggleMonitoring()
                         showMenu = false
@@ -453,9 +461,10 @@ struct ConnectionsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 
                 // 客户端标签
-                MenuButton(
+                StickerMenuButton(
+                    text: "客户端标签",
                     icon: "tag.fill",
-                    color: .blue,
+                    tint: .blue,
                     action: {
                         showClientTagSheet = true
                         showMenu = false
@@ -464,9 +473,10 @@ struct ConnectionsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 
                 // 刷新视图
-                MenuButton(
+                StickerMenuButton(
+                    text: "刷新",
                     icon: "arrow.clockwise",
-                    color: .green,
+                    tint: .green,
                     action: {
                         Task {
                             await viewModel.refresh()
@@ -477,9 +487,10 @@ struct ConnectionsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 
                 // 清理已断开连接
-                MenuButton(
+                StickerMenuButton(
+                    text: "清理已断开连接",
                     icon: "trash.fill",
-                    color: .orange,
+                    tint: .orange,
                     action: {
                         showClearClosedConfirmation = true
                     }
@@ -487,9 +498,10 @@ struct ConnectionsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 
                 // 终止所有连接
-                MenuButton(
+                StickerMenuButton(
+                    text: "打断全部连接",
                     icon: "xmark.circle.fill",
-                    color: .red,
+                    tint: .red,
                     action: {
                         showCloseAllConfirmation = true
                     }
@@ -499,20 +511,23 @@ struct ConnectionsView: View {
             
             // 修改主按钮的旋转角度
             Button(action: {
+                HapticManager.shared.impact(.light)
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     showMenu.toggle()
                 }
             }) {
-                Circle()
-                    .fill(Color(.systemBackground))
-                    .frame(width: 48, height: 48)
-                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-                    .overlay {
-                        Image(systemName: "ellipsis")
-                            .rotationEffect(.degrees(showMenu ? 90 : 0))
-                            .foregroundColor(.accentColor)
-                            .font(.system(size: 24, weight: .semibold))
-                    }
+                ZStack {
+                    Circle()
+                        .fill(Color(.systemBackground))
+                        .frame(width: 48, height: 48)
+                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                        .overlay {
+                            Image(systemName: "ellipsis")
+                                .rotationEffect(.degrees(showMenu ? 90 : 0))
+                                .foregroundColor(.accentColor)
+                                .font(.system(size: 24, weight: .semibold))
+                        }
+                }
             }
         }
         .alert("确定清理已断开连接", isPresented: $showClearClosedConfirmation) {
@@ -754,9 +769,10 @@ struct ConnectionsView: View {
             }
             
             menuButtons
-                .padding(.horizontal, 16)
+                .padding(.trailing, 16)
                 .padding(.top, 16)
                 .padding(.bottom, floatingTabBarVisible ? 104 : 16)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .animation(.easeInOut(duration: 0.3), value: floatingTabBarVisible)
         }
         .sheet(item: $selectedConnection) { connection in
@@ -806,7 +822,10 @@ struct MenuButton: View {
     let action: () -> Void
     
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            HapticManager.shared.impact(.light)
+            action()
+        }) {
             Circle()
                 .fill(Color(.systemBackground))
                 .frame(width: 40, height: 40)
@@ -817,6 +836,36 @@ struct MenuButton: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
         }
+    }
+}
+
+// 贴纸样式的菜单子项（文字 + 图标）
+struct StickerMenuButton: View {
+    let text: String
+    let icon: String
+    var tint: Color = .blue
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: {
+            HapticManager.shared.impact(.light)
+            action()
+        }) {
+            StickerTagView(
+                text: text,
+                systemImage: icon,
+                tint: tint,
+                rotation: .degrees(-3),
+                iconPosition: .trailing,
+                contentPadding: EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10),
+                textFont: .system(size: 13, weight: .medium),
+                iconFont: .system(size: 14, weight: .semibold),
+                cornerRadius: 12,
+                shadowRadius: 6,
+                shadowOpacity: 0.04
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

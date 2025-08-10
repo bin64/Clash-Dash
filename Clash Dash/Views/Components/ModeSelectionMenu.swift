@@ -75,6 +75,10 @@ struct ModeSelectionMenu: View {
         } label: {
             Label(ModeUtils.getModeText(settingsViewModel.mode.lowercased()), 
                   systemImage: ModeUtils.getModeIcon(settingsViewModel.mode.lowercased()))
+                .onTapGesture {
+                    // 触发轻触反馈以响应打开菜单的点按
+                    HapticManager.shared.impact(.light)
+                }
         }
         .onAppear {
             settingsViewModel.getCurrentMode(server: server) { currentMode in
