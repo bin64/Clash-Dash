@@ -1,6 +1,7 @@
 import SwiftUI
 import Charts
 import Darwin
+import UIKit
 
 struct ServerDetailView: View {
     let server: ClashServer
@@ -21,6 +22,7 @@ struct ServerDetailView: View {
     @AppStorage("useFloatingTabs") private var useFloatingTabs = false
     @State private var isTabBarVisible = true
     @State private var lastScrollOffset: CGFloat = 0
+    @State private var showProxyQuickMenu = false
     
     // 根据设备类型和屏幕方向计算浮动标签栏的最大宽度
     private func floatingTabBarMaxWidth(for screenSize: CGSize) -> CGFloat {
@@ -113,7 +115,10 @@ struct ServerDetailView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        FloatingTabBar(selectedTab: $selectedTab)
+                        FloatingTabBar(selectedTab: $selectedTab, onProxyLongPress: {
+                            HapticManager.shared.impact(.rigid)
+                            showProxyQuickMenu = true
+                        })
                             .frame(maxWidth: floatingTabBarMaxWidth(for: geometry.size))
                         Spacer()
                     }
@@ -126,6 +131,11 @@ struct ServerDetailView: View {
             .environment(\.floatingTabBarVisible, isTabBarVisible)
         }
         .ignoresSafeArea(.container, edges: .bottom)
+        .sheet(isPresented: $showProxyQuickMenu) {
+            ProxyQuickMenuView()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .simultaneousGesture(
             DragGesture()
                 .onChanged { value in
@@ -241,6 +251,12 @@ struct ServerDetailView: View {
                 }
                 .tag(4)
         }
+        .background(TabBarLongPressRecognizer(onLongPress: { index in
+            if index == 1 { // 代理
+                HapticManager.shared.impact(.rigid)
+                showProxyQuickMenu = true
+            }
+        }))
         .navigationTitle(server.name.isEmpty ? "\(server.openWRTUrl ?? server.url):\(server.openWRTPort ?? server.port)" : server.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -285,6 +301,11 @@ struct ServerDetailView: View {
             print("📣 HTTP端口已更新: \(newPort)")
             connectivityViewModel.setupWithServer(server, httpPort: newPort, settingsViewModel: settingsViewModel)
             print("已更新ConnectionViewModel中的端口: \(newPort)")
+        }
+        .sheet(isPresented: $showProxyQuickMenu) {
+            ProxyQuickMenuView()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
     
@@ -342,8 +363,10 @@ struct FloatingTabBar: View {
     @State private var previousSelectedTab: Int = 0
     @State private var skewX: CGFloat = 0.0 // 水平倾斜
     @State private var cornerRadius: CGFloat = 20.0 // 动态圆角
+    @State private var suppressNextTapOnProxy: Bool = false
     
     @Environment(\.colorScheme) private var colorScheme
+    var onProxyLongPress: (() -> Void)? = nil
     
     private let tabs = [
         (index: 0, title: "概览", icon: "chart.line.uptrend.xyaxis"),
@@ -426,6 +449,11 @@ struct FloatingTabBar: View {
                 HStack(spacing: 0) {
                     ForEach(tabs, id: \.index) { tab in
                         Button(action: {
+                            if tab.index == 1 && suppressNextTapOnProxy {
+                                // 长按触发后抑制一次点击切换
+                                suppressNextTapOnProxy = false
+                                return
+                            }
                             // 触发方向性水滴变形动画
                             triggerDirectionalLiquidAnimation(
                                 from: selectedTab,
@@ -469,6 +497,18 @@ struct FloatingTabBar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(TabButtonStyle())
+                        .highPriorityGesture(
+                            LongPressGesture(minimumDuration: 0.5)
+                                .onEnded { _ in
+                                    if tab.index == 1 {
+                                        suppressNextTapOnProxy = true
+                                        onProxyLongPress?()
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                            suppressNextTapOnProxy = false
+                                        }
+                                    }
+                                }
+                        )
                     }
                 }
             }
@@ -564,6 +604,160 @@ struct TabButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .opacity(configuration.isPressed ? 0.8 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+//#pragma mark - Proxy Quick Menu
+
+struct ProxyQuickMenuView: View {
+    @AppStorage("hideUnavailableProxies") private var hideUnavailableProxies = false
+    @AppStorage("proxyGroupSortOrder") private var proxyGroupSortOrder = ProxyGroupSortOrder.default
+    @AppStorage("pinBuiltinProxies") private var pinBuiltinProxies = false
+    @AppStorage("hideProxyProviders") private var hideProxyProviders = false
+    @AppStorage("smartProxyGroupDisplay") private var smartProxyGroupDisplay = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SettingToggleRow(
+                        title: "隐藏不可用代理",
+                        subtitle: "在代理组的代理节点列表中不显示无法连接的代理",
+                        isOn: $hideUnavailableProxies
+                    )
+
+                    NavigationLink {
+                        ProxyGroupSortOrderView(selection: $proxyGroupSortOrder)
+                    } label: {
+                        SettingRow(
+                            title: "排序方式",
+                            value: proxyGroupSortOrder.description
+                        )
+                    }
+
+                    SettingToggleRow(
+                        title: "置顶内置策略",
+                        subtitle: "将 DIRECT 和 REJECT 等内置策略始终保持在最前面",
+                        isOn: $pinBuiltinProxies
+                    )
+
+                    SettingToggleRow(
+                        title: "隐藏代理提供者",
+                        subtitle: "在代理页面中不显示代理提供者信息",
+                        isOn: $hideProxyProviders
+                    )
+
+                    SettingToggleRow(
+                        title: "Global 代理组显示控制",
+                        subtitle: "规则/直连模式下隐藏 GLOBAL 组，全局模式下仅显示 GLOBAL 组",
+                        isOn: $smartProxyGroupDisplay
+                    )
+                } header: {
+                    SectionHeader(title: "代理组排序设置", systemImage: "arrow.up.arrow.down")
+                }
+            }
+            .navigationTitle("快速代理组设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+//#pragma mark - UITabBar Long Press Recognizer
+
+struct TabBarLongPressRecognizer: UIViewRepresentable {
+    let onLongPress: (Int) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onLongPress: onLongPress)
+    }
+
+    func makeUIView(context: Context) -> AttachableView {
+        let view = AttachableView()
+        view.onAttachedToWindow = { window in
+            context.coordinator.attach(to: window)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: AttachableView, context: Context) { }
+
+    final class Coordinator: NSObject {
+        private let onLongPress: (Int) -> Void
+        private var longPressRecognizer: UILongPressGestureRecognizer?
+        private weak var observedTabBar: UITabBar?
+        private weak var windowRef: UIWindow?
+        private var findTimer: Timer?
+
+        init(onLongPress: @escaping (Int) -> Void) {
+            self.onLongPress = onLongPress
+        }
+
+        func attach(to window: UIWindow?) {
+            guard let window else { return }
+            windowRef = window
+            guard observedTabBar == nil else { return }
+            startFindingTabBar()
+        }
+
+        private func startFindingTabBar() {
+            findTimer?.invalidate()
+            var attemptsRemaining = 40 // ~10s @0.25s
+            findTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+                guard let self else { timer.invalidate(); return }
+                guard let window = self.windowRef else { timer.invalidate(); return }
+                if let tabBar = self.findTabBar(in: window) {
+                    timer.invalidate()
+                    self.attachRecognizer(to: tabBar)
+                } else {
+                    attemptsRemaining -= 1
+                    if attemptsRemaining <= 0 { timer.invalidate() }
+                }
+            }
+            RunLoop.main.add(findTimer!, forMode: .common)
+        }
+
+        private func attachRecognizer(to tabBar: UITabBar) {
+            guard observedTabBar == nil else { return }
+            observedTabBar = tabBar
+            let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+            recognizer.minimumPressDuration = 0.5
+            recognizer.cancelsTouchesInView = false
+            tabBar.addGestureRecognizer(recognizer)
+            longPressRecognizer = recognizer
+        }
+
+        @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began, let tabBar = observedTabBar else { return }
+            let location = gesture.location(in: tabBar)
+            let count = tabBar.items?.count ?? 0
+            guard count > 0 else { return }
+            let widthPerItem = tabBar.bounds.width / CGFloat(count)
+            var index = Int(location.x / max(widthPerItem, 1))
+            index = max(0, min(index, count - 1))
+            onLongPress(index)
+        }
+
+        private func findTabBar(in root: UIView) -> UITabBar? {
+            if let bar = root as? UITabBar { return bar }
+            for sub in root.subviews {
+                if let bar = findTabBar(in: sub) { return bar }
+            }
+            return nil
+        }
+    }
+
+    final class AttachableView: UIView {
+        var onAttachedToWindow: ((UIWindow?) -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onAttachedToWindow?(self.window)
+        }
     }
 }
 
