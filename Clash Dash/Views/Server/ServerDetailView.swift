@@ -616,48 +616,91 @@ struct ProxyQuickMenuView: View {
     @AppStorage("hideProxyProviders") private var hideProxyProviders = false
     @AppStorage("smartProxyGroupDisplay") private var smartProxyGroupDisplay = false
     @Environment(\.dismiss) private var dismiss
+    @State private var sortExpanded = false
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    SettingToggleRow(
-                        title: "隐藏不可用代理",
-                        subtitle: "在代理组的代理节点列表中不显示无法连接的代理",
-                        isOn: $hideUnavailableProxies
-                    )
+            ScrollView {
+                VStack(spacing: 16) {
+                    
 
-                    NavigationLink {
-                        ProxyGroupSortOrderView(selection: $proxyGroupSortOrder)
-                    } label: {
-                        SettingRow(
-                            title: "排序方式",
-                            value: proxyGroupSortOrder.description
-                        )
+                    ModernSectionCard {
+                        DisclosureGroup(isExpanded: $sortExpanded) {
+                            VStack(spacing: 4) {
+                                ForEach(ProxyGroupSortOrder.allCases) { order in
+                                    Button {
+                                        proxyGroupSortOrder = order
+                                        HapticManager.shared.impact(.light)
+                                    } label: {
+                                        HStack {
+                                            Text(order.description)
+                                                .foregroundColor(.primary)
+                                            Spacer()
+                                            if order == proxyGroupSortOrder {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundColor(.accentColor)
+                                            }
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.vertical, 8)
+                                    if order != ProxyGroupSortOrder.allCases.last {
+                                        Divider().opacity(0.08)
+                                    }
+                                }
+                            }
+                            .transition(.opacity)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "arrow.up.arrow.down.circle")
+                                    .foregroundStyle(.secondary)
+                                Text("排序方式")
+                                Spacer()
+                                Text(proxyGroupSortOrder.description)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: sortExpanded)
                     }
 
-                    SettingToggleRow(
-                        title: "置顶内置策略",
-                        subtitle: "将 DIRECT 和 REJECT 等内置策略始终保持在最前面",
-                        isOn: $pinBuiltinProxies
-                    )
-
-                    SettingToggleRow(
-                        title: "隐藏代理提供者",
-                        subtitle: "在代理页面中不显示代理提供者信息",
-                        isOn: $hideProxyProviders
-                    )
-
-                    SettingToggleRow(
-                        title: "Global 代理组显示控制",
-                        subtitle: "规则/直连模式下隐藏 GLOBAL 组，全局模式下仅显示 GLOBAL 组",
-                        isOn: $smartProxyGroupDisplay
-                    )
-                } header: {
-                    SectionHeader(title: "代理组排序设置", systemImage: "arrow.up.arrow.down")
+                    ModernSectionCard {
+                        VStack(spacing: 8) {
+                            ToggleRow(
+                                icon: "eye.slash", tint: .purple,
+                                title: "隐藏不可用代理",
+                                subtitle: "在代理组中不显示无法连接的代理",
+                                isOn: $hideUnavailableProxies
+                            )
+                            Divider().opacity(0.08)
+                            ToggleRow(
+                                icon: "pin.fill", tint: .orange,
+                                title: "置顶内置策略",
+                                subtitle: "将 DIRECT/REJECT 等策略保持在最前面",
+                                isOn: $pinBuiltinProxies
+                            )
+                            Divider().opacity(0.08)
+                            ToggleRow(
+                                icon: "shippingbox", tint: .blue,
+                                title: "隐藏代理提供者",
+                                subtitle: "在代理页面中不显示提供者信息",
+                                isOn: $hideProxyProviders
+                            )
+                            Divider().opacity(0.08)
+                            ToggleRow(
+                                icon: "globe.asia.australia.fill", tint: .green,
+                                title: "Global 代理组显示控制",
+                                subtitle: "规则/直连模式隐藏 GLOBAL，全局模式仅显示 GLOBAL",
+                                isOn: $smartProxyGroupDisplay
+                            )
+                        }
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
             }
-            .navigationTitle("快速代理组设置")
+            .navigationTitle("调整显示偏好")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -665,6 +708,68 @@ struct ProxyQuickMenuView: View {
                 }
             }
         }
+    }
+}
+
+// 现代分组卡片容器
+struct ModernSectionCard<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark ? .thickMaterial : .ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(colorScheme == .dark ? 0.06 : 0.0))
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.12), radius: 14, x: 0, y: 6)
+    }
+}
+
+// 前置图标徽标
+struct IconBadge: View {
+    let systemName: String
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(.accentColor)
+            .frame(width: 28, height: 28)
+            .background(Color.accentColor.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+// 图标+说明+开关 行
+struct ToggleRow: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let subtitle: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 28, height: 28)
+                .background(tint.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(subtitle).caption()
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+        }
+        .padding(.vertical, 6)
     }
 }
 
