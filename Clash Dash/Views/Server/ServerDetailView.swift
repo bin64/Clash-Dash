@@ -616,162 +616,250 @@ struct ProxyQuickMenuView: View {
     @AppStorage("hideProxyProviders") private var hideProxyProviders = false
     @AppStorage("smartProxyGroupDisplay") private var smartProxyGroupDisplay = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var sortExpanded = false
+    @State private var showContent = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    
-
-                    ModernSectionCard {
-                        DisclosureGroup(isExpanded: $sortExpanded) {
-                            VStack(spacing: 4) {
-                                ForEach(ProxyGroupSortOrder.allCases) { order in
-                                    Button {
-                                        proxyGroupSortOrder = order
-                                        HapticManager.shared.impact(.light)
-                                    } label: {
-                                        HStack {
-                                            Text(order.description)
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                            if order == proxyGroupSortOrder {
-                                                Image(systemName: "checkmark")
-                                                    .foregroundColor(.accentColor)
-                                            }
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.vertical, 8)
-                                    if order != ProxyGroupSortOrder.allCases.last {
-                                        Divider().opacity(0.08)
-                                    }
-                                }
-                            }
-                            .transition(.opacity)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "arrow.up.arrow.down.circle")
-                                    .foregroundStyle(.secondary)
-                                Text("排序方式")
-                                Spacer()
-                                Text(proxyGroupSortOrder.description)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+            ZStack {
+                // 简洁背景
+                Color(.systemGroupedBackground)
+                    .ignoresSafeArea()
+                
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        // 简洁头部
+                        CompactHeaderSection()
+                        
+                        // 排序控制
+                        CompactSectionCard {
+                            CompactSortSection(
+                                isExpanded: $sortExpanded,
+                                selectedOrder: $proxyGroupSortOrder
+                            )
+                        }
+                        
+                        // 显示选项
+                        CompactSectionCard {
+                            VStack(spacing: 0) {
+                                CompactToggleRow(
+                                    icon: "eye.slash.fill", tint: .purple,
+                                    title: "隐藏不可用代理",
+                                    isOn: $hideUnavailableProxies
+                                )
+                                Divider().padding(.leading, 40)
+                                
+                                CompactToggleRow(
+                                    icon: "pin.fill", tint: .orange,
+                                    title: "置顶内置策略",
+                                    isOn: $pinBuiltinProxies
+                                )
+                                Divider().padding(.leading, 40)
+                                
+                                CompactToggleRow(
+                                    icon: "shippingbox.fill", tint: .blue,
+                                    title: "隐藏代理提供者",
+                                    isOn: $hideProxyProviders
+                                )
+                                Divider().padding(.leading, 40)
+                                
+                                CompactToggleRow(
+                                    icon: "globe.asia.australia.fill", tint: .green,
+                                    title: "智能 Global 代理组显示",
+                                    isOn: $smartProxyGroupDisplay
+                                )
                             }
                         }
-                        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: sortExpanded)
                     }
-
-                    ModernSectionCard {
-                        VStack(spacing: 8) {
-                            ToggleRow(
-                                icon: "eye.slash", tint: .purple,
-                                title: "隐藏不可用代理",
-                                subtitle: "在代理组中不显示无法连接的代理",
-                                isOn: $hideUnavailableProxies
-                            )
-                            Divider().opacity(0.08)
-                            ToggleRow(
-                                icon: "pin.fill", tint: .orange,
-                                title: "置顶内置策略",
-                                subtitle: "将 DIRECT/REJECT 等策略保持在最前面",
-                                isOn: $pinBuiltinProxies
-                            )
-                            Divider().opacity(0.08)
-                            ToggleRow(
-                                icon: "shippingbox", tint: .blue,
-                                title: "隐藏代理提供者",
-                                subtitle: "在代理页面中不显示提供者信息",
-                                isOn: $hideProxyProviders
-                            )
-                            Divider().opacity(0.08)
-                            ToggleRow(
-                                icon: "globe.asia.australia.fill", tint: .green,
-                                title: "Global 代理组显示控制",
-                                subtitle: "规则/直连模式隐藏 GLOBAL，全局模式仅显示 GLOBAL",
-                                isOn: $smartProxyGroupDisplay
-                            )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 20)
+                    .opacity(showContent ? 1 : 0)
+                    .offset(y: showContent ? 0 : 10)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showContent)
+                }
+                .navigationTitle("显示偏好")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("完成") {
+                            HapticManager.shared.impact(.light)
+                            dismiss()
                         }
+                        .font(.subheadline.weight(.medium))
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
             }
-            .navigationTitle("调整显示偏好")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }
-                }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                showContent = true
             }
         }
     }
 }
 
-// 现代分组卡片容器
-struct ModernSectionCard<Content: View>: View {
+// MARK: - Compact Components
+
+struct CompactHeaderSection: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.accentColor)
+                .frame(width: 24, height: 24)
+                .background(Color.accentColor.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            
+            Text("快速调整代理显示选项")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 8)
+    }
+}
+
+struct CompactSectionCard<Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     let content: () -> Content
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(spacing: 0) {
             content()
         }
-        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? .thickMaterial : .ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(colorScheme == .dark ? 0.06 : 0.0))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(.separator).opacity(0.2), lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.12), radius: 14, x: 0, y: 6)
     }
 }
 
-// 前置图标徽标
-struct IconBadge: View {
-    let systemName: String
+struct CompactSortSection: View {
+    @Binding var isExpanded: Bool
+    @Binding var selectedOrder: ProxyGroupSortOrder
+    
     var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.accentColor)
-            .frame(width: 28, height: 28)
-            .background(Color.accentColor.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    isExpanded.toggle()
+                }
+                HapticManager.shared.impact(.light)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.accentColor)
+                        .frame(width: 24, height: 24)
+                        .background(Color.accentColor.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("排序方式")
+                            .font(.body.weight(.medium))
+                            .foregroundColor(.primary)
+                        Text(selectedOrder.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
+                }
+                .padding(12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            if isExpanded {
+                VStack(spacing: 0) {
+                    ForEach(ProxyGroupSortOrder.allCases) { order in
+                        Button {
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                                selectedOrder = order
+                            }
+                            HapticManager.shared.impact(.light)
+                        } label: {
+                            HStack {
+                                Text(order.description)
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                                
+                                if order == selectedOrder {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.accentColor)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(order == selectedOrder ? 
+                                       Color.accentColor.opacity(0.08) : Color.clear)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        if order != ProxyGroupSortOrder.allCases.last {
+                            Divider().padding(.leading, 12)
+                        }
+                    }
+                }
+                .clipped()
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .scale(scale: 0.95, anchor: .top)),
+                    removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .top))
+                ))
+            }
+        }
     }
 }
 
-// 图标+说明+开关 行
-struct ToggleRow: View {
+struct CompactToggleRow: View {
     let icon: String
     let tint: Color
     let title: String
-    let subtitle: String
     @Binding var isOn: Bool
-
+    
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(tint)
-                .frame(width: 28, height: 28)
-                .background(tint.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(subtitle).caption()
-            }
+                .frame(width: 24, height: 24)
+                .background(tint.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            
+            Text(title)
+                .font(.body)
+                .foregroundColor(.primary)
+            
             Spacer()
+            
             Toggle("", isOn: $isOn)
                 .labelsHidden()
+                .scaleEffect(0.8)
+                .onChange(of: isOn) { _ in
+                    HapticManager.shared.impact(.light)
+                }
         }
-        .padding(.vertical, 6)
+        .padding(12)
     }
 }
+
+
 
 //#pragma mark - UITabBar Long Press Recognizer
 
