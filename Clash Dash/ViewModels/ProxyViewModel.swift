@@ -660,7 +660,7 @@ class ProxyViewModel: ObservableObject {
                 history: nodes[index].history
             )
             nodes[index] = updatedNode
-            logger.info("节点延迟已更新 - 原延迟:\(oldDelay), 新延迟:\(delay)")
+            logger.info("节点（\(nodeName)）延迟已更新 - 原延迟:\(oldDelay), 新延迟:\(delay)")
             objectWillChange.send()
         } else {
             logger.error("未找到要更新的节点: \(nodeName)")
@@ -679,7 +679,7 @@ class ProxyViewModel: ObservableObject {
             }
         }
         
-        logger.error("刷新所有数据完成")
+        logger.info("刷新所有数据完成")
     }
     
     // 修改组测速方法
@@ -712,7 +712,7 @@ class ProxyViewModel: ObservableObject {
         ]
         
         guard let finalUrl = components?.url else {
-            print("创建最终 URL 失败")
+            // print("创建最终 URL 失败")
             return
         }
         request.url = finalUrl
@@ -726,7 +726,7 @@ class ProxyViewModel: ObservableObject {
             if server.clashUseSSL,
                let httpsResponse = response as? HTTPURLResponse,
                httpsResponse.statusCode == 400 {
-                print("SSL 连接失败，服务器可能不支持 HTTPS")
+                // print("SSL 连接失败，服务器可能不支持 HTTPS")
                 testingGroups.remove(groupName)
                 objectWillChange.send()
                 return

@@ -23,6 +23,8 @@ struct ServerDetailView: View {
     @State private var isTabBarVisible = true
     @State private var lastScrollOffset: CGFloat = 0
     @State private var showProxyQuickMenu = false
+    @State private var isKeyboardVisible = false
+    @State private var keyboardHeight: CGFloat = 0
     
     // 根据设备类型和屏幕方向计算浮动标签栏的最大宽度
     private func floatingTabBarMaxWidth(for screenSize: CGSize) -> CGFloat {
@@ -123,9 +125,12 @@ struct ServerDetailView: View {
                         Spacer()
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, geometry.safeAreaInsets.bottom + 25)
-                    .offset(y: isTabBarVisible ? 0 : 120)
+                    .padding(.bottom, isKeyboardVisible ? 0 : geometry.safeAreaInsets.bottom + 25)
+                    .offset(y: calculateTabBarOffset(geometry: geometry))
+                    .opacity(isKeyboardVisible ? 0 : 1)
                     .animation(.spring(response: 0.6, dampingFraction: 0.8), value: isTabBarVisible)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.9), value: isKeyboardVisible)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.9), value: keyboardHeight)
                 }
             }
             .environment(\.floatingTabBarVisible, isTabBarVisible)
@@ -171,9 +176,13 @@ struct ServerDetailView: View {
             if selectedTab == 0 {
                 networkMonitor.startMonitoring(server: server)
             }
+            // 监听键盘显示/隐藏通知
+            addKeyboardObservers()
         }
         .onDisappear {
             networkMonitor.stopMonitoring()
+            // 移除键盘通知监听
+            removeKeyboardObservers()
         }
         .onChange(of: selectedTab) { newTab in
             if newTab == 0 {
@@ -337,6 +346,63 @@ struct ServerDetailView: View {
                 // print("📱 ServerDetailView - 显示浮动标签栏")
             }
         }
+    }
+    
+    // MARK: - 标签栏位置计算
+    private func calculateTabBarOffset(geometry: GeometryProxy) -> CGFloat {
+        if isKeyboardVisible {
+            // 键盘显示时，将标签栏完全移出屏幕底部
+            return geometry.size.height + 100
+        } else if !isTabBarVisible {
+            // 滚动隐藏时的偏移
+            return 120
+        } else {
+            // 正常显示状态
+            return 0
+        }
+    }
+    
+    // MARK: - 键盘监听方法
+    private func addKeyboardObservers() {
+        NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillShowNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue {
+                let keyboardRectangle = keyboardFrame.cgRectValue
+                let keyboardHeight = keyboardRectangle.height
+                
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                    self.keyboardHeight = keyboardHeight
+                    self.isKeyboardVisible = true
+                }
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillHideNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                self.keyboardHeight = 0
+                self.isKeyboardVisible = false
+            }
+        }
+    }
+    
+    private func removeKeyboardObservers() {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIResponder.keyboardWillShowNotification,
+            object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
     }
 }
 
