@@ -1004,23 +1004,31 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
 
             logger.debug("配置文件元数据: \(statResponse.result)")
             
-            // 检查配置文件语法
-            // print("🔍 检查配置文件语法: \(fileName)")
+            // 检查配置文件语法（使用本地 Yams 验证）
             logger.debug("🔍 检查配置文件语法: \(fileName)")
-            var checkRequest = URLRequest(url: sysURL)
-            checkRequest.httpMethod = "POST"
-            checkRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            checkRequest.setValue("sysauth=\(token); sysauth_http=\(token); sysauth_https=\(token)", forHTTPHeaderField: "Cookie")
-            
-            let checkCommand: [String: Any] = [
-                "method": "exec",
-                "params": ["ruby -ryaml -rYAML -I \"/usr/share/openclash\" -E UTF-8 -e \"puts YAML.load_file('\(filePath)')\" 2>/dev/null"]
-            ]
-            checkRequest.httpBody = try JSONSerialization.data(withJSONObject: checkCommand)
-            
-            let (checkData, _) = try await session.data(for: checkRequest)
-            let checkResult = try JSONDecoder().decode(ListResponse.self, from: checkData)
-            let check: OpenClashConfig.ConfigCheck = checkResult.result != "false\n" && !checkResult.result.isEmpty ? .normal : .abnormal
+            let check: OpenClashConfig.ConfigCheck
+            do {
+                // 获取配置文件内容进行本地验证
+                let configContent = try await fetchConfigContent(
+                    server,
+                    configFilename: fileName,
+                    packageName: "openclash",
+                    isSubscription: false
+                )
+                
+                // 使用 Yams 进行本地验证
+                let validationResult = YAMLValidator.validateClashConfig(configContent)
+                check = validationResult.isValid ? .normal : .abnormal
+                
+                if !validationResult.isValid {
+                    logger.warning("配置文件语法错误 \(fileName): \(validationResult.error ?? "未知错误")")
+                } else if let warning = validationResult.error {
+                    logger.info("配置文件警告 \(fileName): \(warning)")
+                }
+            } catch {
+                logger.error("验证配置文件 \(fileName) 时出错: \(error)")
+                check = .abnormal
+            }
             
             // 获取订阅信息
             // print("获取订阅信息: \(fileName)")
@@ -1354,7 +1362,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         let fileDate = Date(timeIntervalSince1970: TimeInterval(statResponse.result.mtime))
         let timeDiff = Date().timeIntervalSince(fileDate)
         
-        logger.info("⏱ 文件修改时间差: \(timeDiff)秒")
+        logger.info("文件修改时间差: \(timeDiff)秒")
         
         if timeDiff < 0 || timeDiff > 5 {
             logger.error("文件时间验证失败")
