@@ -105,6 +105,9 @@ struct ConnectionsView: View {
     }
     @State private var viewMode: ViewMode = .list
     
+    // 添加排序 sheet 状态
+    @State private var showSortSheet = false
+    
     // 在 SortOption 枚举前添加 DeviceFilterButton
     private var deviceFilterButton: some View {
         Button {
@@ -620,24 +623,8 @@ struct ConnectionsView: View {
             deviceFilterButton
             
             // 排序按钮
-            Menu {
-                ForEach(SortOption.allCases, id: \.self) { option in
-                    Button {
-                        if selectedSortOption == option {
-                            isAscending.toggle()
-                        } else {
-                            selectedSortOption = option
-                            isAscending = false
-                        }
-                    } label: {
-                        HStack {
-                            Label(option.rawValue, systemImage: option.icon)
-                            if selectedSortOption == option {
-                                Image(systemName: isAscending ? "chevron.up" : "chevron.down")
-                            }
-                        }
-                    }
-                }
+            Button {
+                showSortSheet = true
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: selectedSortOption.icon)
@@ -653,6 +640,164 @@ struct ConnectionsView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(Color(.systemBackground))
+    }
+    
+    // 精致小巧的排序选择器
+    private var sortSheetView: some View {
+        VStack(spacing: 0) {
+            // 精美的顶部装饰
+            VStack(spacing: 12) {
+                // 标题区域
+                HStack(spacing: 12) {
+                    // 装饰图标
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.15))
+                            .frame(width: 32, height: 32)
+                        
+                        Image(systemName: "arrow.up.arrow.down")
+                            .foregroundColor(.accentColor)
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("排序方式")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Text("\(selectedSortOption.rawValue) • \(isAscending ? "升序" : "降序")")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+            }
+            .background(
+                LinearGradient(
+                    colors: [Color(.systemBackground), Color(.systemGroupedBackground)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            
+            // 选项卡片列表
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(SortOption.allCases, id: \.self) { option in
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                if selectedSortOption == option {
+                                    isAscending.toggle()
+                                } else {
+                                    selectedSortOption = option
+                                    isAscending = false
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 14) {
+                                // 精美图标设计
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(
+                                            selectedSortOption == option ? 
+                                            LinearGradient(
+                                                colors: [Color.accentColor, Color.accentColor.opacity(0.8)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ) :
+                                            LinearGradient(
+                                                colors: [Color(.systemGray6), Color(.systemGray5)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 36, height: 36)
+                                        .shadow(
+                                            color: selectedSortOption == option ? 
+                                            Color.accentColor.opacity(0.3) : Color.black.opacity(0.05),
+                                            radius: selectedSortOption == option ? 4 : 2,
+                                            x: 0,
+                                            y: selectedSortOption == option ? 2 : 1
+                                        )
+                                    
+                                    Image(systemName: option.icon)
+                                        .foregroundColor(selectedSortOption == option ? .white : .accentColor)
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                                
+                                // 文字内容
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(option.rawValue)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundColor(.primary)
+                                    
+                                    if selectedSortOption == option {
+                                        Text(isAscending ? "升序排列" : "降序排列")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                
+                                Spacer()
+                                
+                                // 状态指示器
+                                if selectedSortOption == option {
+                                    HStack(spacing: 6) {
+                                        // 方向切换按钮
+                                        Button {
+                                            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                                                isAscending.toggle()
+                                            }
+                                        } label: {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(isAscending ? Color.blue.opacity(0.15) : Color.orange.opacity(0.15))
+                                                    .frame(width: 28, height: 28)
+                                                
+                                                Image(systemName: isAscending ? "arrow.up" : "arrow.down")
+                                                    .foregroundColor(isAscending ? .blue : .orange)
+                                                    .font(.system(size: 12, weight: .bold))
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        
+                                        // 选中指示
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.accentColor)
+                                            .font(.system(size: 18))
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color(.systemBackground))
+                                    .shadow(
+                                        color: Color.black.opacity(selectedSortOption == option ? 0.08 : 0.03),
+                                        radius: selectedSortOption == option ? 8 : 3,
+                                        x: 0,
+                                        y: selectedSortOption == option ? 3 : 1
+                                    )
+                            )
+                            .scaleEffect(selectedSortOption == option ? 1.02 : 1.0)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .background(Color(.systemGroupedBackground))
+        }
+        .background(Color(.systemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .presentationDetents([.height(320)])
+        .presentationDragIndicator(.hidden)
     }
     
     private func EmptyStateView() -> some View {
@@ -810,6 +955,9 @@ struct ConnectionsView: View {
                     )
                 }
             }
+        }
+        .sheet(isPresented: $showSortSheet) {
+            sortSheetView
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
