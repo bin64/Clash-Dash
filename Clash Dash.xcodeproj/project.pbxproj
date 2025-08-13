@@ -13,7 +13,7 @@
 		9D38295C2D114F52002FF881 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D38295B2D114F52002FF881 /* WidgetKit.framework */; };
 		9D38295E2D114F52002FF881 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D38295D2D114F52002FF881 /* SwiftUI.framework */; };
 		9D38296D2D114F54002FF881 /* WidgetExtensionExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9D3829592D114F52002FF881 /* WidgetExtensionExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		9DE03BA92E4B02E10043FC6B /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = 9DE03BA82E4B02E10043FC6B /* Yams */; };
+		9DE03BBC2E4C21D10043FC6B /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = 9DE03BBB2E4C21D10043FC6B /* Yams */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -182,7 +182,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9DE03BA92E4B02E10043FC6B /* Yams in Frameworks */,
+				9DE03BBC2E4C21D10043FC6B /* Yams in Frameworks */,
 				9D06EE982D65D6E700BEFD43 /* Shared.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -306,7 +306,7 @@
 			);
 			name = "Clash Dash";
 			packageProductDependencies = (
-				9DE03BA82E4B02E10043FC6B /* Yams */,
+				9DE03BBB2E4C21D10043FC6B /* Yams */,
 			);
 			productName = "Clash Dash";
 			productReference = 9D3823E02D0816F7002FF881 /* Clash Dash.app */;
@@ -420,7 +420,7 @@
 			mainGroup = 9D3823D72D0816F7002FF881;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				9DE03BA72E4B02E10043FC6B /* XCRemoteSwiftPackageReference "Yams" */,
+				9DE03BBA2E4C21D10043FC6B /* XCRemoteSwiftPackageReference "Yams" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9D3823E12D0816F7002FF881 /* Products */;
@@ -744,7 +744,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Clash Dash/Clash Dash.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_ASSET_PATHS = "\"Clash Dash/Preview Content\"";
 				DEVELOPMENT_TEAM = M943S3MQCS;
 				ENABLE_PREVIEWS = YES;
@@ -781,7 +781,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Clash Dash/Clash Dash.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_ASSET_PATHS = "\"Clash Dash/Preview Content\"";
 				DEVELOPMENT_TEAM = M943S3MQCS;
 				ENABLE_PREVIEWS = YES;
@@ -890,7 +890,7 @@
 				CODE_SIGN_ENTITLEMENTS = WidgetExtensionExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_TEAM = M943S3MQCS;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
@@ -920,7 +920,7 @@
 				CODE_SIGN_ENTITLEMENTS = WidgetExtensionExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEVELOPMENT_TEAM = M943S3MQCS;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
@@ -1002,7 +1002,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		9DE03BA72E4B02E10043FC6B /* XCRemoteSwiftPackageReference "Yams" */ = {
+		9DE03BBA2E4C21D10043FC6B /* XCRemoteSwiftPackageReference "Yams" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/jpsim/Yams.git";
 			requirement = {
@@ -1013,9 +1013,9 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		9DE03BA82E4B02E10043FC6B /* Yams */ = {
+		9DE03BBB2E4C21D10043FC6B /* Yams */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 9DE03BA72E4B02E10043FC6B /* XCRemoteSwiftPackageReference "Yams" */;
+			package = 9DE03BBA2E4C21D10043FC6B /* XCRemoteSwiftPackageReference "Yams" */;
 			productName = Yams;
 		};
 /* End XCSwiftPackageProductDependency section */

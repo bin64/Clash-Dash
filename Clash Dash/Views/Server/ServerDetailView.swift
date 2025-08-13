@@ -111,6 +111,8 @@ struct ServerDetailView: View {
                         EmptyView()
                     }
                 }
+                .contentShape(Rectangle())
+                // 全局滚动监听已接管显隐逻辑，这里不再附加手势，避免与内部 ScrollView 竞争
                 
                 // 浮动标签栏
                 VStack {
@@ -132,7 +134,25 @@ struct ServerDetailView: View {
                     .animation(.spring(response: 0.4, dampingFraction: 0.9), value: isKeyboardVisible)
                     .animation(.spring(response: 0.4, dampingFraction: 0.9), value: keyboardHeight)
                 }
+                .zIndex(99999)
             }
+            .overlay(
+                GlobalPanObserver { deltaY, state, velocity, translation in
+                    guard !isKeyboardVisible else { return }
+                    // 优先判断垂直方向意图
+                    if abs(velocity.x) > abs(velocity.y) { return }
+                    let deltaThreshold: CGFloat = 4
+                    let velocityThreshold: CGFloat = 120
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if deltaY < -deltaThreshold || velocity.y < -velocityThreshold {
+                            isTabBarVisible = false
+                        } else if deltaY > deltaThreshold || velocity.y > velocityThreshold {
+                            isTabBarVisible = true
+                        }
+                    }
+                }
+                .allowsHitTesting(false)
+            )
             .environment(\.floatingTabBarVisible, isTabBarVisible)
         }
         .ignoresSafeArea(.container, edges: .bottom)
@@ -141,12 +161,6 @@ struct ServerDetailView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .simultaneousGesture(
-            DragGesture()
-                .onChanged { value in
-                    handleDragGesture(value)
-                }
-        )
         .navigationTitle(server.name.isEmpty ? "\(server.openWRTUrl ?? server.url):\(server.openWRTPort ?? server.port)" : server.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -213,7 +227,7 @@ struct ServerDetailView: View {
                 HapticManager.shared.impact(.light)
                 settingsViewModel.fetchConfig(server: server) 
                 connectivityViewModel.setupWithServer(server, httpPort: settingsViewModel.httpPort, settingsViewModel: settingsViewModel)
-                print("⚙️ ServerDetailView - 初始服务器设置, 端口: \(settingsViewModel.httpPort)")
+                // print("⚙️ ServerDetailView - 初始服务器设置, 端口: \(settingsViewModel.httpPort)")
             }
             .tabItem {
                 Label("概览", systemImage: "chart.line.uptrend.xyaxis")
@@ -307,9 +321,9 @@ struct ServerDetailView: View {
             }
         }
         .onChange(of: settingsViewModel.httpPort) { newPort in
-            print("📣 HTTP端口已更新: \(newPort)")
+            // print("📣 HTTP端口已更新: \(newPort)")
             connectivityViewModel.setupWithServer(server, httpPort: newPort, settingsViewModel: settingsViewModel)
-            print("已更新ConnectionViewModel中的端口: \(newPort)")
+            // print("已更新ConnectionViewModel中的端口: \(newPort)")
         }
         .sheet(isPresented: $showProxyQuickMenu) {
             ProxyQuickMenuView()
@@ -332,18 +346,18 @@ struct ServerDetailView: View {
     }
     
     private func handleDragGesture(_ value: DragGesture.Value) {
-        let threshold: CGFloat = 20
+        let threshold: CGFloat = 8
         let translationY = value.translation.height
-        
-        withAnimation(.easeInOut(duration: 0.3)) {
-            if translationY < -threshold {
-                // Dragging up (content scrolling down) - hide tab bar
+        let predictedY = value.predictedEndTranslation.height
+        let effectiveY = abs(predictedY) > abs(translationY) ? predictedY : translationY
+
+        withAnimation(.easeInOut(duration: 0.25)) {
+            if effectiveY < -threshold {
+                // 向上滑动（内容向下滚）- 隐藏
                 isTabBarVisible = false
-                // print("📱 ServerDetailView - 隐藏浮动标签栏")
-            } else if translationY > threshold {
-                // Dragging down (content scrolling up) - show tab bar
+            } else if effectiveY > threshold {
+                // 向下滑动（内容向上滚）- 显示
                 isTabBarVisible = true
-                // print("📱 ServerDetailView - 显示浮动标签栏")
             }
         }
     }
@@ -406,6 +420,87 @@ struct ServerDetailView: View {
     }
 }
 
+// 全局 Pan 观察器：将 UIPanGestureRecognizer 安装到窗口上，且与所有手势同时识别，不拦截点击
+struct GlobalPanObserver: UIViewRepresentable {
+    typealias PanCallback = (_ deltaY: CGFloat, _ state: UIGestureRecognizer.State, _ velocity: CGPoint, _ translation: CGPoint) -> Void
+    let onPan: PanCallback
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPan: onPan)
+    }
+
+    func makeUIView(context: Context) -> AttachView {
+        let view = AttachView()
+        view.onAttachedToWindow = { window in
+            context.coordinator.attach(to: window)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: AttachView, context: Context) { }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        private let onPan: PanCallback
+        private weak var windowRef: UIWindow?
+        private var panRecognizer: UIPanGestureRecognizer?
+        private var lastTranslation: CGPoint = .zero
+
+        init(onPan: @escaping PanCallback) {
+            self.onPan = onPan
+        }
+
+        func attach(to window: UIWindow?) {
+            guard let window else { return }
+            guard panRecognizer == nil else { return }
+            windowRef = window
+            let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.delegate = self
+            recognizer.minimumNumberOfTouches = 1
+            recognizer.maximumNumberOfTouches = 1
+            window.addGestureRecognizer(recognizer)
+            panRecognizer = recognizer
+        }
+
+        @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let window = windowRef else { return }
+            let translation = gesture.translation(in: window)
+            let velocity = gesture.velocity(in: window)
+
+            if gesture.state == .began {
+                lastTranslation = translation
+            }
+
+            let delta = CGPoint(x: translation.x - lastTranslation.x, y: translation.y - lastTranslation.y)
+            onPan(delta.y, gesture.state, velocity, translation)
+            lastTranslation = translation
+
+            if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
+                lastTranslation = .zero
+            }
+        }
+
+        // 允许与所有手势同时识别，避免与 ScrollView 等互斥
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
+
+        // 确保不阻断子视图手势：不要求失败关系
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    }
+
+    final class AttachView: UIView {
+        var onAttachedToWindow: ((UIWindow?) -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onAttachedToWindow?(self.window)
+        }
+    }
+}
+
 // Environment key for floating tab bar visibility
 struct FloatingTabBarVisibleKey: EnvironmentKey {
     static let defaultValue: Bool = true
@@ -429,7 +524,6 @@ struct FloatingTabBar: View {
     @State private var previousSelectedTab: Int = 0
     @State private var skewX: CGFloat = 0.0 // 水平倾斜
     @State private var cornerRadius: CGFloat = 20.0 // 动态圆角
-    @State private var suppressNextTapOnProxy: Bool = false
     
     @Environment(\.colorScheme) private var colorScheme
     var onProxyLongPress: (() -> Void)? = nil
@@ -467,6 +561,7 @@ struct FloatingTabBar: View {
                             )
                             .blur(radius: 0.5)
                     )
+                    .allowsHitTesting(false)
                     .overlay(
                         // 深色模式下添加微弱的边框光晕
                         RoundedRectangle(cornerRadius: 25)
@@ -510,16 +605,12 @@ struct FloatingTabBar: View {
                         perspective: 0.5
                     )
                     .offset(x: indicatorOffset)
+                    .allowsHitTesting(false)
                 
                 // 标签按钮
                 HStack(spacing: 0) {
                     ForEach(tabs, id: \.index) { tab in
                         Button(action: {
-                            if tab.index == 1 && suppressNextTapOnProxy {
-                                // 长按触发后抑制一次点击切换
-                                suppressNextTapOnProxy = false
-                                return
-                            }
                             // 触发方向性水滴变形动画
                             triggerDirectionalLiquidAnimation(
                                 from: selectedTab,
@@ -563,15 +654,11 @@ struct FloatingTabBar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(TabButtonStyle())
-                        .highPriorityGesture(
+                        .simultaneousGesture(
                             LongPressGesture(minimumDuration: 0.5)
                                 .onEnded { _ in
                                     if tab.index == 1 {
-                                        suppressNextTapOnProxy = true
                                         onProxyLongPress?()
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                            suppressNextTapOnProxy = false
-                                        }
                                     }
                                 }
                         )
