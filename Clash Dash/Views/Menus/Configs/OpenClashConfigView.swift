@@ -676,9 +676,7 @@ struct SubscriptionInfoView: View {
                 
                 // 到期信息
                 HStack(spacing: 16) {
-                    if let dayLeft = info.dayLeft {
-                        DataLabel(title: "剩余天数", value: "\(dayLeft)天")
-                    }
+                    DataLabel(title: "剩余天数", value: info.dayLeft != nil ? "\(info.dayLeft!)天" : "-")
                     if let expire = info.expire {
                         DataLabel(title: "到期时间", value: expire)
                     }

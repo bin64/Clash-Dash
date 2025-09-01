@@ -335,7 +335,7 @@ class OpenClashClient: ClashClient {
                     let subInfo: String
                     let surplus: String
                     let total: String
-                    let dayLeft: Int
+                    let dayLeft: Int?
                     let used: String
                     let expire: String
                     let percent: String
@@ -343,6 +343,25 @@ class OpenClashClient: ClashClient {
                     enum CodingKeys: String, CodingKey {
                         case subInfo = "sub_info"
                         case surplus, total, dayLeft = "day_left", used, expire, percent
+                    }
+                    
+                    init(from decoder: Decoder) throws {
+                        let container = try decoder.container(keyedBy: CodingKeys.self)
+                        subInfo = try container.decode(String.self, forKey: .subInfo)
+                        surplus = try container.decode(String.self, forKey: .surplus)
+                        total = try container.decode(String.self, forKey: .total)
+                        used = try container.decode(String.self, forKey: .used)
+                        expire = try container.decode(String.self, forKey: .expire)
+                        percent = try container.decode(String.self, forKey: .percent)
+                        
+                        // 处理 day_left 字段，可能是 Int 或者 String "null"
+                        if let intValue = try? container.decode(Int.self, forKey: .dayLeft) {
+                            dayLeft = intValue
+                        } else if let stringValue = try? container.decode(String.self, forKey: .dayLeft), stringValue != "null" {
+                            dayLeft = Int(stringValue)
+                        } else {
+                            dayLeft = nil
+                        }
                     }
                 }
                 
