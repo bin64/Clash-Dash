@@ -337,7 +337,7 @@ class OpenClashClient: ClashClient {
                     let total: String
                     let dayLeft: Int?
                     let used: String
-                    let expire: String
+                    let expire: String?
                     let percent: String
                     
                     enum CodingKeys: String, CodingKey {
@@ -351,7 +351,6 @@ class OpenClashClient: ClashClient {
                         surplus = try container.decode(String.self, forKey: .surplus)
                         total = try container.decode(String.self, forKey: .total)
                         used = try container.decode(String.self, forKey: .used)
-                        expire = try container.decode(String.self, forKey: .expire)
                         percent = try container.decode(String.self, forKey: .percent)
                         
                         // 处理 day_left 字段，可能是 Int 或者 String "null"
@@ -362,6 +361,13 @@ class OpenClashClient: ClashClient {
                         } else {
                             dayLeft = nil
                         }
+                        
+                        // 处理 expire 字段，可能是 String 或者 String "null"
+                        if let stringValue = try? container.decode(String.self, forKey: .expire), stringValue != "null" {
+                            expire = stringValue
+                        } else {
+                            expire = nil
+                        }
                     }
                 }
                 
@@ -371,9 +377,12 @@ class OpenClashClient: ClashClient {
                     let dateFormatter = DateFormatter()
                     dateFormatter.dateFormat = "yyyy-MM-dd"
                     
-                    guard let expireDate = dateFormatter.date(from: response.expire) else {
-                        LogManager.shared.error("订阅信息 - 无法解析到期日期: \(response.expire)")
-                        return try await getProxyProvider()
+                    var expireDate: Date? = nil
+                    if let expireString = response.expire {
+                        expireDate = dateFormatter.date(from: expireString)
+                        if expireDate == nil {
+                            LogManager.shared.warning("订阅信息 - 无法解析到期日期: \(expireString)")
+                        }
                     }
                     
                     return [
