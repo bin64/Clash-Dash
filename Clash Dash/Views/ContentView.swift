@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var dragTargetIndex: Int?
     @State private var dragDirection: DragDirection = .none
     @State private var showLocalNetworkDeniedAlert = false
+    @State private var isOnHomeScreen = true // 跟踪是否在首页
 
     private enum DragDirection {
         case up, down, none
@@ -81,7 +82,20 @@ struct ContentView: View {
             return 0
         }()
         
-        return NavigationLink(destination: ServerDetailView(server: server)) {
+        return NavigationLink(destination: ServerDetailView(server: server)
+            .onAppear {
+                // 导航到详情页面时，标记不在首页
+                print("🚪 导航到服务器详情页面: \(server.name)")
+                isOnHomeScreen = false
+                print("🏠 isOnHomeScreen 设置为: \(isOnHomeScreen)")
+            }
+            .onDisappear {
+                // 从详情页面返回时，标记回到首页
+                print("⬅️ 从服务器详情页面返回首页")
+                isOnHomeScreen = true
+                print("🏠 isOnHomeScreen 设置为: \(isOnHomeScreen)")
+            }
+        ) {
             ServerRowView(server: server)
                 .serverContextMenu(
                     viewModel: viewModel,
@@ -453,6 +467,7 @@ struct ContentView: View {
                 }
             }
             .refreshable {
+                print("🔄 用户触发下拉刷新，执行服务器状态检查")
                 await viewModel.checkAllServersStatus()
             }
             .alert("连接错误", isPresented: $viewModel.showError) {
@@ -518,14 +533,19 @@ struct ContentView: View {
                 UserDefaults.standard.set("", forKey: "current_ssid")
             }
             
-            // 首次打开时刷新服务器列表
-            Task {
-                await viewModel.checkAllServersStatus()
-            }
-            
+            // 检查是否有快速启动的服务器
+            let hasQuickLaunch = viewModel.servers.contains(where: { $0.isQuickLaunch })
+
             if let quickLaunchServer = viewModel.servers.first(where: { $0.isQuickLaunch }) {
                 selectedQuickLaunchServer = quickLaunchServer
                 showQuickLaunchDestination = true
+                print("⚡ 检测到快速启动服务器: \(quickLaunchServer.name)，跳过首页服务器状态检查")
+            } else {
+                // 首次打开时刷新服务器列表（仅在没有快速启动时）
+                print("🏠 首次打开App，当前在首页，执行服务器状态检查")
+                Task {
+                    await viewModel.checkAllServersStatus()
+                }
             }
             
             viewModel.setBingingManager(bindingManager)
@@ -534,8 +554,22 @@ struct ContentView: View {
             if newPhase == .active {
                 // print("应用进入活动状态")
                 // 从后台返回前台时刷新服务器列表和 Wi‑Fi 状态
-                Task {
-                    await viewModel.checkAllServersStatus()
+                // 检查是否有快速启动服务器，如果有则跳过检查
+                let hasQuickLaunch = viewModel.servers.contains(where: { $0.isQuickLaunch })
+
+                if hasQuickLaunch {
+                    print("⚡ 检测到快速启动服务器，从后台返回前台时跳过服务器状态检查")
+                } else {
+                    // 只有在首页且没有快速启动服务器时才检查状态，避免在详情页面的 Tab 中重复检查
+                    print("📱 从后台返回前台，当前是否在首页: \(isOnHomeScreen)")
+                    if isOnHomeScreen {
+                        print("✅ 在首页，执行服务器状态检查")
+                        Task {
+                            await viewModel.checkAllServersStatus()
+                        }
+                    } else {
+                        print("❌ 不在首页，跳过服务器状态检查")
+                    }
                 }
                 
                 if enableWiFiBinding {
@@ -579,10 +613,17 @@ struct ContentView: View {
                 forceRefresh.toggle()  // 切换强制刷新标志
             }
             // 刷新服务器状态
-            Task {
-                // print("开始刷新服务器状态")
-                await viewModel.checkAllServersStatus()
-                // print("服务器状态刷新完成")
+            // 只有在首页时才检查服务器状态，避免在详情页面的 Tab 中重复检查
+            print("📡 Wi-Fi 绑定变化，当前是否在首页: \(isOnHomeScreen)")
+            if isOnHomeScreen {
+                print("✅ 在首页，因Wi-Fi绑定变化执行服务器状态检查")
+                Task {
+                    // print("开始刷新服务器状态")
+                    await viewModel.checkAllServersStatus()
+                    // print("服务器状态刷新完成")
+                }
+            } else {
+                print("❌ 不在首页，跳过Wi-Fi绑定变化导致的服务器状态检查")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ControllersUpdated"))) { _ in
