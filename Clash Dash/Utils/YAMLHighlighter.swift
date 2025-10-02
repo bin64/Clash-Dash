@@ -37,7 +37,7 @@ struct YAMLHighlighter {
         let mainSections = ["proxies", "proxy-groups", "rules", "proxy-providers", "script", "dns", "hosts", "tun"]
         
         // 先分析注释
-        for (lineIndex, line) in lines.enumerated() {
+        for (_, line) in lines.enumerated() {
             let lineStart = currentPosition
             let lineLength = line.utf16.count
             

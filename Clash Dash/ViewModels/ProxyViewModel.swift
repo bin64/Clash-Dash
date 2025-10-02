@@ -351,7 +351,7 @@ class ProxyViewModel: ObservableObject {
                     logger.warning("检测到所有节点都处于超时状态")
                     
                     // 尝试对 GLOBAL 组进行一次自动测速
-                    if let globalGroup = self.groups.first(where: { $0.name == "GLOBAL" }) {
+                    if self.groups.contains(where: { $0.name == "GLOBAL" }) {
                         logger.info("正在对 GLOBAL 组进行自动测速以尝试刷新节点状态")
                         Task {
                             await self.testGroupSpeed(groupName: "GLOBAL")

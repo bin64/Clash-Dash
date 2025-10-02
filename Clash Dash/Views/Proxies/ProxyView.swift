@@ -494,7 +494,7 @@ struct GroupCard: View {
                         .scaleEffect(0.7)
                 } else {
                     // 获取实际节点的延迟
-                    let (actualNode, finalDelay) = viewModel.getActualNodeAndDelay(nodeName: group.now)
+                    let (_, finalDelay) = viewModel.getActualNodeAndDelay(nodeName: group.now)
                     
                     // 显示当前状态
                     if group.type == "LoadBalance" {

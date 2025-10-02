@@ -534,7 +534,7 @@ struct ContentView: View {
             }
             
             // 检查是否有快速启动的服务器
-            let hasQuickLaunch = viewModel.servers.contains(where: { $0.isQuickLaunch })
+            _ = viewModel.servers.contains(where: { $0.isQuickLaunch })
 
             if let quickLaunchServer = viewModel.servers.first(where: { $0.isQuickLaunch }) {
                 selectedQuickLaunchServer = quickLaunchServer

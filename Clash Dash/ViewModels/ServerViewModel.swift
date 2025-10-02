@@ -2152,7 +2152,7 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         request.httpBody = body
         
         // 发送请求
-        let (data, response) = try await session.data(for: request)
+        let (_, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             logger.error("无效的响应类型")

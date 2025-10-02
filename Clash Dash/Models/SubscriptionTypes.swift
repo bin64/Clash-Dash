@@ -21,7 +21,7 @@ public enum ModeSwitchCardStyle: String, CaseIterable, Codable {
 }
 
 // 订阅信息卡片数据模型
-public struct SubscriptionCardInfo: Identifiable, Codable {
+public struct SubscriptionCardInfo: Identifiable, Codable, Sendable {
     public let id: UUID
     public let name: String?
     public let expiryDate: Date?

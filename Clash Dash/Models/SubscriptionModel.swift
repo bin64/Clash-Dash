@@ -779,7 +779,8 @@ class MihomoClient: ClashClient {
 }
 
 // 订阅信息管理器
-class SubscriptionManager: ObservableObject {
+@MainActor
+class SubscriptionManager: ObservableObject, Sendable {
     @Published var subscriptions: [SubscriptionCardInfo] = []
     @Published var isLoading = false
     @Published var lastUpdateTime: Date?
