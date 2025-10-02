@@ -8,6 +8,8 @@ struct ConnectionRow: View {
     let onClose: () -> Void
     @Environment(\.colorScheme) var colorScheme
     @Binding var selectedConnection: ClashConnection?
+
+    @State private var snapEffect: Bool = false
     
     private var cardBackgroundColor: Color {
         colorScheme == .dark ? 
@@ -158,7 +160,7 @@ struct ConnectionRow: View {
                             .frame(width: 16, height: 16)
                         Text(connection.formattedStartTime)
                             .foregroundColor(.secondary)
-                        
+
                         // 根据连接状态显示不同的信息
                         if connection.isAlive {
                             SpeedView(download: connection.downloadSpeed, upload: connection.uploadSpeed)
@@ -174,15 +176,15 @@ struct ConnectionRow: View {
                         }
                     }
                     .font(.footnote)
-                    
+
                     Spacer()
-                    
+
                     // 只在连接活跃时显示关闭按钮
                     if connection.isAlive {
                         Button {
                             // 添加触觉反馈
                             HapticManager.shared.impact(.light)
-                            onClose()
+                            snapEffect = true
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary.opacity(0.5))
@@ -191,7 +193,7 @@ struct ConnectionRow: View {
                         .buttonStyle(.plain)
                     }
                 }
-                
+
                 // 第二行：主机信息
                 HStack(spacing: 6) {
                     Image(systemName: "globe.americas.fill")
@@ -206,7 +208,7 @@ struct ConnectionRow: View {
                             .font(.system(size: 14, weight: .regular))
                     }
                 }
-                
+
                 // 第三行：规则链
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.triangle.branch")
@@ -219,7 +221,7 @@ struct ConnectionRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .font(.callout)
-                
+
                 // 第四行：网络信息和流量
                 HStack {
                     // 网络类型和源IP信息
@@ -231,7 +233,7 @@ struct ConnectionRow: View {
                             .background(Color.green.opacity(0.1))
                             .foregroundColor(.green)
                             .cornerRadius(4)
-                        
+
                         // 添加 IPv6 标签
                         if connection.metadata.sourceIP.contains(":") || connection.metadata.destinationIP?.contains(":") == true {
                             Text("IPv6")
@@ -242,7 +244,7 @@ struct ConnectionRow: View {
                                 .foregroundColor(.purple)
                                 .cornerRadius(4)
                         }
-                        
+
                         ScrollView(.horizontal, showsIndicators: false) {
                             if let tagName = getClientTag(for: connection.metadata.sourceIP) {
                                 Text(tagName)
@@ -259,9 +261,9 @@ struct ConnectionRow: View {
                             }
                         }
                     }
-                    
+
                     Spacer()
-                    
+
                     // 使用修改后的流量显示组件
                     HStack(spacing: 8) {
                         TrafficView(
@@ -285,6 +287,12 @@ struct ConnectionRow: View {
             .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
+            .disintegrationEffect(isDeleted: snapEffect) {
+                // 延迟一点时间再执行关闭，确保动画完全完成
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    onClose()
+                }
+            }
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: connection.isAlive)

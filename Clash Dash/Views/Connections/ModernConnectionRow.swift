@@ -8,6 +8,8 @@ struct ModernConnectionRow: View {
     let onClose: () -> Void
     @Environment(\.colorScheme) var colorScheme
     @Binding var selectedConnection: ClashConnection?
+
+    @State private var snapEffect: Bool = false
     
     private struct Theme {
         let background: Color
@@ -140,7 +142,7 @@ struct ModernConnectionRow: View {
                     if connection.isAlive {
                         Button {
                             HapticManager.shared.impact(.light)
-                            onClose()
+                            snapEffect = true
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 16))
@@ -178,6 +180,12 @@ struct ModernConnectionRow: View {
             )
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
+            .disintegrationEffect(isDeleted: snapEffect) {
+                // 延迟一点时间再执行关闭，确保动画完全完成
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    onClose()
+                }
+            }
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
