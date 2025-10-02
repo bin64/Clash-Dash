@@ -1705,9 +1705,19 @@ struct ZashNodeCardOptimized: View {
             .background(cardBackgroundColor)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color(.systemGray4).opacity(colorScheme == .dark ? 0.4 : 0.2), lineWidth: colorScheme == .dark ? 1.0 : 0.5)
-                    .id("border-\(nodeName)")
+                ZStack {
+                    // 基础边框
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color(.systemGray4).opacity(colorScheme == .dark ? 0.4 : 0.2), lineWidth: colorScheme == .dark ? 1.0 : 0.5)
+
+                    // 选中状态特殊边框
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.blue.opacity(0.8), lineWidth: 2.0)
+                            .padding(1) // 让选中边框稍微向内缩进
+                    }
+                }
+                .id("border-\(nodeName)")
             )
             .id("content-\(nodeName)")
         }
