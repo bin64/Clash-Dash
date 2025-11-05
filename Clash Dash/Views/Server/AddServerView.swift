@@ -243,6 +243,12 @@ struct AddServerView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+
+    // Surge device name 相关状态
+    @State private var showDeviceNameDialog = false
+    @State private var detectedDeviceName = ""
+    @State private var detectedSurgeVersion: String? = nil
+    @State private var detectedSurgeBuild: String? = nil
     
     // OpenWRT 相关状态
     @State private var isOpenWRT = false
@@ -252,6 +258,9 @@ struct AddServerView: View {
     @State private var openWRTUsername = ""
     @State private var openWRTPassword = ""
     @State private var luciPackage: LuCIPackage = .openClash
+
+    // Surge 相关状态
+    @State private var isSurge = false
     
     // 添加密码显示控制状态
     @State private var isSecretVisible = false
@@ -282,18 +291,18 @@ struct AddServerView: View {
                 }
                 
                 Section {
-                    TextField("控制器地址", text: $url)
+                    TextField(isSurge ? "Surge 地址" : "控制器地址", text: $url)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
-                    TextField("控制器端口", text: $port)
+                    TextField(isSurge ? "Surge 端口" : "控制器端口", text: $port)
                         .keyboardType(.numberPad)
                     HStack(spacing: 8) {
                         if isSecretVisible {
-                            TextField("控制器密钥（可选）", text: $secret)
+                            TextField(isSurge ? "Surge API Key" : "控制器密钥（可选）", text: $secret)
                                 .textInputAutocapitalization(.never)
                                 .textContentType(.password)
                         } else {
-                            SecureField("控制器密钥（可选）", text: $secret)
+                            SecureField(isSurge ? "Surge API Key" : "控制器密钥（可选）", text: $secret)
                                 .textInputAutocapitalization(.never)
                                 .textContentType(.password)
                         }
@@ -311,7 +320,7 @@ struct AddServerView: View {
                     
                     Toggle(isOn: $useSSL) {
                         Label {
-                            Text("使用 HTTPS")
+                            Text(isSurge ? "Surge 使用 HTTPS" : "使用 HTTPS")
                         } icon: {
                             Image(systemName: "lock.fill")
                                 .foregroundColor(useSSL ? .green : .secondary)
@@ -329,6 +338,17 @@ struct AddServerView: View {
                     Toggle("添加 OpenWRT 控制", isOn: $isOpenWRT)
                         .onChange(of: isOpenWRT) { newValue in
                             HapticManager.shared.impact(.light)
+                            if newValue {
+                                isSurge = false
+                            }
+                        }
+
+                    Toggle("添加 Surge 控制", isOn: $isSurge)
+                        .onChange(of: isSurge) { newValue in
+                            HapticManager.shared.impact(.light)
+                            if newValue {
+                                isOpenWRT = false
+                            }
                         }
                     
                     if isOpenWRT {
@@ -419,6 +439,9 @@ struct AddServerView: View {
                     if isOpenWRT {
                         Text("添加 OpenWRT 控制后，可以直接在 App 中所选的管理器中进行订阅管理、切换配置、附加规则、重启服务等操作")
                     }
+                    if isSurge {
+                        Text("添加 Surge 控制后，可以直接在 App 中对 Surge 进行连接监控、策略管理等操作")
+                    }
                 }
                 
                 Section {
@@ -482,6 +505,51 @@ struct AddServerView: View {
                                     await MainActor.run {
                                         dismiss()
                                     }
+                                } else if isSurge {
+                                    // 创建 Surge 服务器
+                                    let cleanHost = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                                    var server = ClashServer(
+                                        name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                        url: cleanHost,
+                                        port: port,
+                                        secret: "",
+                                        status: .unknown,
+                                        version: nil,
+                                        clashUseSSL: false,
+                                        source: .surge
+                                    )
+
+                                    // 设置 Surge 相关信息 (直接使用上面的字段)
+                                    server.surgeKey = secret  // API key 来自 secret 字段
+                                    server.surgeUseSSL = useSSL  // HTTPS 设置来自 useSSL 字段
+
+                                    // 验证 Surge 服务器
+                                    let (success, deviceName, surgeVersion, surgeBuild) = try await viewModel.validateSurgeServer(server)
+                                    if !success {
+                                        throw NetworkError.invalidResponse(message: "Surge 服务器验证失败")
+                                    }
+
+                                    // 更新服务器的版本信息
+                                    server.surgeVersion = surgeVersion
+                                    server.surgeBuild = surgeBuild
+
+                                    // 检查是否有设备名称，如果有且与当前名称不同，就询问用户是否使用
+                                    if let deviceName = deviceName, !deviceName.isEmpty, deviceName != name.trimmingCharacters(in: .whitespacesAndNewlines) {
+                                        await MainActor.run {
+                                            isLoading = false // 停止加载状态，允许用户与 Alert 交互
+                                            detectedDeviceName = deviceName
+                                            detectedSurgeVersion = surgeVersion
+                                            detectedSurgeBuild = surgeBuild
+                                            showDeviceNameDialog = true
+                                        }
+                                        return // 等待用户确认后再添加服务器
+                                    }
+
+                                    // 验证成功后添加服务器
+                                    viewModel.addServer(server)
+                                    await MainActor.run {
+                                        dismiss()
+                                    }
                                 } else {
                                     // 创建普通服务器
                                     let server = ClashServer(
@@ -514,11 +582,74 @@ struct AddServerView: View {
                             }
                         }
                     }
-                    .disabled(url.isEmpty || port.isEmpty || (isOpenWRT && (openWRTUrl.isEmpty || openWRTPort.isEmpty || openWRTUsername.isEmpty || openWRTPassword.isEmpty)))
+                    .disabled(url.isEmpty || port.isEmpty || (isOpenWRT && (openWRTUrl.isEmpty || openWRTPort.isEmpty || openWRTUsername.isEmpty || openWRTPassword.isEmpty)) || (isSurge && secret.isEmpty))
                 }
             }
             .sheet(isPresented: $showingHelp) {
                 AddServerHelpView()
+            }
+            .alert("检测到设备名称", isPresented: $showDeviceNameDialog) {
+                Button("使用") {
+                    isLoading = true // 开始处理
+                    name = detectedDeviceName
+                    // 继续添加服务器（使用新的名称）
+                    Task {
+                        do {
+                            let cleanHost = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                            var server = ClashServer(
+                                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                url: cleanHost,
+                                port: port,
+                                secret: "",
+                                status: .unknown,
+                                version: nil,
+                                clashUseSSL: false,
+                                source: .surge
+                            )
+
+                            server.surgeKey = secret
+                            server.surgeUseSSL = useSSL
+                            server.surgeVersion = detectedSurgeVersion
+                            server.surgeBuild = detectedSurgeBuild
+
+                            viewModel.addServer(server)
+                            await MainActor.run {
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+                Button("保持当前") {
+                    isLoading = true // 开始处理
+                    // 继续添加服务器（使用原有名称）
+                    Task {
+                        do {
+                            let cleanHost = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                            var server = ClashServer(
+                                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                url: cleanHost,
+                                port: port,
+                                secret: "",
+                                status: .unknown,
+                                version: nil,
+                                clashUseSSL: false,
+                                source: .surge
+                            )
+
+                            server.surgeKey = secret
+                            server.surgeUseSSL = useSSL
+                            server.surgeVersion = detectedSurgeVersion
+                            server.surgeBuild = detectedSurgeBuild
+
+                            viewModel.addServer(server)
+                            await MainActor.run {
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+            } message: {
+                Text("检测到 Surge 设备名称：\"\(detectedDeviceName)\"\n\n是否将其用作控制器名称？")
             }
             .alert("错误", isPresented: $showError) {
                 Button("确定", role: .cancel) { }

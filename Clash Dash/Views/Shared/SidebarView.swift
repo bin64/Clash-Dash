@@ -498,7 +498,16 @@ struct SidebarServerRow: View {
                     .animation(.easeInOut(duration: 0.2), value: shouldShowSelection)
                 
                 // 服务器类型图标
-                Image(systemName: server.source == .clashController ? "server.rack" : server.luciPackage == .openClash ? "o.square" : "n.square")
+                Image(systemName: {
+                    switch server.source {
+                    case .clashController:
+                        return "server.rack"
+                    case .openWRT:
+                        return server.luciPackage == .openClash ? "o.square" : "n.square"
+                    case .surge:
+                        return "waveform.path.ecg"
+                    }
+                }())
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(
                         shouldShowSelection 
@@ -551,7 +560,16 @@ struct SidebarServerRow: View {
                     
                     if server.status == .ok {
                         // 类型标签
-                        Text(server.source == .clashController ? "Clash" : server.luciPackage == .openClash ? "OpenClash" : "Nikki")
+                        Text({
+                            switch server.source {
+                            case .clashController:
+                                return "Clash"
+                            case .openWRT:
+                                return server.luciPackage == .openClash ? "OpenClash" : "Nikki"
+                            case .surge:
+                                return "Surge"
+                            }
+                        }())
                             .font(.system(size: 9, weight: .medium))
                             .foregroundColor(
                                 shouldShowSelection 

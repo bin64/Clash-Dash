@@ -16,6 +16,12 @@ struct EditServerView: View {
     @State private var isLoading = false
     @State private var showError = false
     @State private var errorMessage = ""
+
+    // Surge device name 相关状态
+    @State private var showDeviceNameDialog = false
+    @State private var detectedDeviceName = ""
+    @State private var detectedSurgeVersion: String? = nil
+    @State private var detectedSurgeBuild: String? = nil
     
     // OpenWRT 相关状态
     @State private var isOpenWRT: Bool
@@ -25,6 +31,9 @@ struct EditServerView: View {
     @State private var openWRTUsername: String
     @State private var openWRTPassword: String
     @State private var luciPackage: LuCIPackage
+
+    // Surge 相关状态
+    @State private var isSurge: Bool
     
     // 添加密码显示控制状态
     @State private var isSecretVisible = false
@@ -54,8 +63,9 @@ struct EditServerView: View {
         self._name = State(initialValue: server.name)
         self._url = State(initialValue: server.url)
         self._port = State(initialValue: server.port)
-        self._secret = State(initialValue: server.secret)
-        self._useSSL = State(initialValue: server.clashUseSSL)
+        // 对于 Surge 服务器，secret 字段显示 API key
+        self._secret = State(initialValue: server.source == .surge ? (server.surgeKey ?? "") : server.secret)
+        self._useSSL = State(initialValue: server.source == .surge ? server.surgeUseSSL : server.clashUseSSL)
         
         // 初始化 OpenWRT 相关状态
         self._isOpenWRT = State(initialValue: server.source == .openWRT)
@@ -65,6 +75,9 @@ struct EditServerView: View {
         self._openWRTUsername = State(initialValue: server.openWRTUsername ?? "")
         self._openWRTPassword = State(initialValue: server.openWRTPassword ?? "")
         self._luciPackage = State(initialValue: server.luciPackage)
+
+        // 初始化 Surge 相关状态
+        self._isSurge = State(initialValue: server.source == .surge)
     }
     
     var body: some View {
@@ -77,19 +90,19 @@ struct EditServerView: View {
                 }
                 
                 Section {
-                    TextField("控制器地址", text: $url)
+                    TextField(isSurge ? "Surge 地址" : "控制器地址", text: $url)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
-                    TextField("控制器端口", text: $port)
+                    TextField(isSurge ? "Surge 端口" : "控制器端口", text: $port)
                         .keyboardType(.numberPad)
-                    
+
                     HStack(spacing: 8) {
                         if isSecretVisible {
-                            TextField("控制器密钥（可选）", text: $secret)
+                            TextField(isSurge ? "Surge API Key" : "控制器密钥（可选）", text: $secret)
                                 .textInputAutocapitalization(.never)
                                 .textContentType(.password)
                         } else {
-                            SecureField("控制器密钥（可选）", text: $secret)
+                            SecureField(isSurge ? "Surge API Key" : "控制器密钥（可选）", text: $secret)
                                 .textInputAutocapitalization(.never)
                                 .textContentType(.password)
                         }
@@ -107,7 +120,7 @@ struct EditServerView: View {
                     
                     Toggle(isOn: $useSSL) {
                         Label {
-                            Text("使用 HTTPS")
+                            Text(isSurge ? "Surge 使用 HTTPS" : "使用 HTTPS")
                         } icon: {
                             Image(systemName: "lock.fill")
                                 .foregroundColor(useSSL ? .green : .secondary)
@@ -125,6 +138,17 @@ struct EditServerView: View {
                     Toggle("添加 OpenWRT 控制", isOn: $isOpenWRT)
                         .onChange(of: isOpenWRT) { newValue in
                             HapticManager.shared.impact(.light)
+                            if newValue {
+                                isSurge = false
+                            }
+                        }
+
+                    Toggle("添加 Surge 控制", isOn: $isSurge)
+                        .onChange(of: isSurge) { newValue in
+                            HapticManager.shared.impact(.light)
+                            if newValue {
+                                isOpenWRT = false
+                            }
                         }
                     
                     if isOpenWRT {
@@ -215,6 +239,9 @@ struct EditServerView: View {
                     if isOpenWRT {
                         Text("添加 OpenWRT 控制后，可以直接在 App 中所选的管理器中进行订阅管理、切换配置、附加规则、重启服务等操作")
                     }
+                    if isSurge {
+                        Text("添加 Surge 控制后，可以直接在 App 中对 Surge 进行连接监控、策略管理等操作")
+                    }
                 }
                 
                 Section {
@@ -282,6 +309,57 @@ struct EditServerView: View {
                                     await MainActor.run {
                                         dismiss()
                                     }
+                                } else if isSurge {
+                                    // 更新 Surge 服务器
+                                    let cleanHost = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                                    var updatedServer = server
+                                    updatedServer.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    updatedServer.url = cleanHost
+                                    updatedServer.port = port
+
+                                    // 更新 Surge 相关信息 (直接使用上面的字段)
+                                    updatedServer.surgeKey = secret  // API key 来自 secret 字段
+                                    updatedServer.surgeUseSSL = useSSL  // HTTPS 设置来自 useSSL 字段
+                                    updatedServer.source = .surge
+
+                                    // 清除其他服务器类型的相关信息
+                                    updatedServer.secret = ""
+                                    updatedServer.clashUseSSL = false
+                                    updatedServer.openWRTUrl = nil
+                                    updatedServer.openWRTUsername = nil
+                                    updatedServer.openWRTPassword = nil
+                                    updatedServer.openWRTPort = nil
+                                    updatedServer.openWRTUseSSL = false
+
+                                    // 验证 Surge 服务器
+                                    let (success, deviceName, surgeVersion, surgeBuild) = try await viewModel.validateSurgeServer(updatedServer)
+                                    if !success {
+                                        throw NetworkError.invalidResponse(message: "Surge 服务器验证失败")
+                                    }
+
+                                    // 更新服务器的版本信息
+                                    updatedServer.surgeVersion = surgeVersion
+                                    updatedServer.surgeBuild = surgeBuild
+
+                                    // 检查是否有设备名称，如果有且与当前名称不同，就询问用户是否使用
+                                    if let deviceName = deviceName, !deviceName.isEmpty, deviceName != name.trimmingCharacters(in: .whitespacesAndNewlines) {
+                                        await MainActor.run {
+                                            isLoading = false // 停止加载状态，允许用户与 Alert 交互
+                                            detectedDeviceName = deviceName
+                                            detectedSurgeVersion = surgeVersion
+                                            detectedSurgeBuild = surgeBuild
+                                            showDeviceNameDialog = true
+                                        }
+                                        return // 等待用户确认后再更新服务器
+                                    }
+
+                                    // 验证成功后更新服务器
+                                    viewModel.updateServer(updatedServer)
+                                    // 刷新控制器状态
+                                    try? await viewModel.refreshServerStatus(for: updatedServer)
+                                    await MainActor.run {
+                                        dismiss()
+                                    }
                                 } else {
                                     // 更新普通服务器
                                     var updatedServer = server
@@ -324,11 +402,82 @@ struct EditServerView: View {
                             }
                         }
                     }
-                    .disabled(url.isEmpty || port.isEmpty || (isOpenWRT && (openWRTUrl.isEmpty || openWRTPort.isEmpty || openWRTUsername.isEmpty || openWRTPassword.isEmpty)))
+                    .disabled(url.isEmpty || port.isEmpty || (isOpenWRT && (openWRTUrl.isEmpty || openWRTPort.isEmpty || openWRTUsername.isEmpty || openWRTPassword.isEmpty)) || (isSurge && secret.isEmpty))
                 }
             }
             .sheet(isPresented: $showingHelp) {
                 AddServerHelpView()
+            }
+            .alert("检测到设备名称", isPresented: $showDeviceNameDialog) {
+                Button("使用") {
+                    isLoading = true // 开始处理
+                    name = detectedDeviceName
+                    // 继续更新服务器（使用新的名称）
+                    Task {
+                        do {
+                            let cleanHost = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                            var updatedServer = server
+                            updatedServer.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                            updatedServer.url = cleanHost
+                            updatedServer.port = port
+
+                            updatedServer.surgeKey = secret
+                            updatedServer.surgeUseSSL = useSSL
+                            updatedServer.surgeVersion = detectedSurgeVersion
+                            updatedServer.surgeBuild = detectedSurgeBuild
+                            updatedServer.source = .surge
+
+                            updatedServer.secret = ""
+                            updatedServer.clashUseSSL = false
+                            updatedServer.openWRTUrl = nil
+                            updatedServer.openWRTUsername = nil
+                            updatedServer.openWRTPassword = nil
+                            updatedServer.openWRTPort = nil
+                            updatedServer.openWRTUseSSL = false
+
+                            viewModel.updateServer(updatedServer)
+                            try? await viewModel.refreshServerStatus(for: updatedServer)
+                            await MainActor.run {
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+                Button("保持当前") {
+                    isLoading = true // 开始处理
+                    // 继续更新服务器（使用原有名称）
+                    Task {
+                        do {
+                            let cleanHost = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                            var updatedServer = server
+                            updatedServer.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                            updatedServer.url = cleanHost
+                            updatedServer.port = port
+
+                            updatedServer.surgeKey = secret
+                            updatedServer.surgeUseSSL = useSSL
+                            updatedServer.surgeVersion = detectedSurgeVersion
+                            updatedServer.surgeBuild = detectedSurgeBuild
+                            updatedServer.source = .surge
+
+                            updatedServer.secret = ""
+                            updatedServer.clashUseSSL = false
+                            updatedServer.openWRTUrl = nil
+                            updatedServer.openWRTUsername = nil
+                            updatedServer.openWRTPassword = nil
+                            updatedServer.openWRTPort = nil
+                            updatedServer.openWRTUseSSL = false
+
+                            viewModel.updateServer(updatedServer)
+                            try? await viewModel.refreshServerStatus(for: updatedServer)
+                            await MainActor.run {
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+            } message: {
+                Text("检测到 Surge 设备名称：\"\(detectedDeviceName)\"\n\n是否将其用作控制器名称？")
             }
             .alert("错误", isPresented: $showError) {
                 Button("确定", role: .cancel) { }

@@ -3,6 +3,7 @@ import SwiftUI
 enum ServerSource: String, Codable {
     case clashController = "clash_controller"
     case openWRT = "openwrt"
+    case surge = "surge"
 }
 
 enum LuCIPackage: String, Codable {
@@ -29,6 +30,10 @@ struct ClashServer: Identifiable, Codable {
     var openWRTUrl: String?
     var openWRTUseSSL: Bool = false
     var luciPackage: LuCIPackage = .openClash
+    var surgeKey: String?
+    var surgeUseSSL: Bool = false
+    var surgeVersion: String?
+    var surgeBuild: String?
     
     enum ServerType: String, Codable {
         case unknown = "Unknown"
@@ -44,6 +49,7 @@ struct ClashServer: Identifiable, Codable {
         case errorMessage, serverType, isQuickLaunch, source
         case openWRTUsername, openWRTPassword, openWRTPort, openWRTUrl
         case luciPackage
+        case surgeKey, surgeUseSSL, surgeVersion, surgeBuild
     }
     
     init(from decoder: Decoder) throws {
@@ -66,6 +72,8 @@ struct ClashServer: Identifiable, Codable {
         openWRTPort = try container.decodeIfPresent(String.self, forKey: .openWRTPort)
         openWRTUrl = try container.decodeIfPresent(String.self, forKey: .openWRTUrl)
         luciPackage = try container.decodeIfPresent(LuCIPackage.self, forKey: .luciPackage) ?? .openClash
+        surgeKey = try container.decodeIfPresent(String.self, forKey: .surgeKey)
+        surgeUseSSL = try container.decodeIfPresent(Bool.self, forKey: .surgeUseSSL) ?? false
         
         // 处理 SSL 字段迁移
         if let oldUseSSL = try container.decodeIfPresent(Bool.self, forKey: .useSSL) {
@@ -100,6 +108,8 @@ struct ClashServer: Identifiable, Codable {
         try container.encode(openWRTPort, forKey: .openWRTPort)
         try container.encode(openWRTUrl, forKey: .openWRTUrl)
         try container.encode(luciPackage, forKey: .luciPackage)
+        try container.encode(surgeKey, forKey: .surgeKey)
+        try container.encode(surgeUseSSL, forKey: .surgeUseSSL)
     }
     
     init(id: UUID = UUID(), 
@@ -126,10 +136,13 @@ struct ClashServer: Identifiable, Codable {
     
     var displayName: String {
         if name.isEmpty {
-            if source == .clashController {
+            switch source {
+            case .clashController:
                 return "\(url):\(port)"
-            } else {
+            case .openWRT:
                 return "\(openWRTUrl ?? url):\(openWRTPort ?? "")"
+            case .surge:
+                return "\(url):\(port)"
             }
         }
         return name
@@ -137,10 +150,17 @@ struct ClashServer: Identifiable, Codable {
     
     var baseURL: URL? {
         let cleanURL = url.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
-        let scheme = source == .clashController ? 
-            (clashUseSSL ? "https" : "http") : 
-            (openWRTUseSSL ? "https" : "http")
-        return URL(string: "\(scheme)://\(cleanURL):\(port)")
+        let scheme: String
+        switch source {
+        case .clashController:
+            scheme = clashUseSSL ? "https" : "http"
+        case .openWRT:
+            scheme = openWRTUseSSL ? "https" : "http"
+        case .surge:
+            scheme = surgeUseSSL ? "https" : "http"
+        }
+        let path = source == .surge ? "/v1" : ""
+        return URL(string: "\(scheme)://\(cleanURL):\(port)\(path)")
     }
     
     /// 专门用于 Clash API 请求的 URL
@@ -158,9 +178,24 @@ struct ClashServer: Identifiable, Codable {
         guard let url = url else {
             throw NetworkError.invalidURL
         }
-        
+
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+
+        // 根据服务器类型设置不同的认证方式
+        switch source {
+        case .clashController:
+            if !secret.isEmpty {
+                request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+            }
+        case .openWRT:
+            // OpenWRT 使用不同的认证方式，已在其他地方处理
+            break
+        case .surge:
+            if let surgeKey = surgeKey, !surgeKey.isEmpty {
+                request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+            }
+        }
+
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 10
         return request

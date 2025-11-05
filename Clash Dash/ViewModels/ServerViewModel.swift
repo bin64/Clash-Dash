@@ -221,8 +221,19 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 30
-        
-        if server.openWRTUseSSL {
+
+        // 根据服务器类型检查是否启用 SSL
+        let useSSL: Bool
+        switch server.source {
+        case .clashController:
+            useSSL = server.clashUseSSL
+        case .openWRT:
+            useSSL = server.openWRTUseSSL
+        case .surge:
+            useSSL = server.surgeUseSSL
+        }
+
+        if useSSL {
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
             if #available(iOS 15.0, *) {
@@ -232,31 +243,54 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             }
             config.tlsMaximumSupportedProtocolVersion = .TLSv13
         }
-        
+
         let session = URLSessionManager.shared.makeCustomSession()
         activeSessions.append(session)  // 保存 session 引用
         return session
     }
     
     private func makeRequest(for server: ClashServer, path: String) -> URLRequest? {
-        let scheme = server.clashUseSSL ? "https" : "http"
+        // 根据服务器类型选择正确的 SSL 设置
+        let useSSL: Bool
+        switch server.source {
+        case .clashController:
+            useSSL = server.clashUseSSL
+        case .openWRT:
+            useSSL = server.openWRTUseSSL
+        case .surge:
+            useSSL = server.surgeUseSSL
+        }
+
+        let scheme = useSSL ? "https" : "http"
         var urlComponents = URLComponents()
-        
+
         urlComponents.scheme = scheme
         urlComponents.host = server.url
         urlComponents.port = Int(server.port)
         urlComponents.path = path
-        
+
         guard let url = urlComponents.url else { return nil }
-        
+
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
-        
-        if !server.secret.isEmpty {
-            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+
+        // 根据服务器类型设置不同的认证方式
+        switch server.source {
+        case .clashController:
+            if !server.secret.isEmpty {
+                request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+            }
+        case .openWRT:
+            // OpenWRT 使用不同的认证方式，已在其他地方处理
+            break
+        case .surge:
+            if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
+                request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+            }
         }
+
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
+
         return request
     }
     
@@ -330,17 +364,32 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
     @MainActor
     private func checkServerStatusAndSummarize(_ server: ClashServer) async -> ServerCheckSummary {
         let address: String = {
-            if server.source == .clashController {
+            switch server.source {
+            case .clashController:
                 return "\(server.url):\(server.port)"
-            } else {
+            case .openWRT:
                 let host = server.openWRTUrl ?? server.url
                 let port = server.openWRTPort ?? server.port
                 return "\(host):\(port)"
+            case .surge:
+                return "\(server.url):\(server.port)"
             }
         }()
         let startTime = Date()
         let timeout = UserDefaults.standard.double(forKey: "serverStatusTimeout")
-        guard var request = makeRequest(for: server, path: "/version") else {
+
+        // 根据服务器类型选择不同的检查端点
+        let checkPath: String
+        switch server.source {
+        case .clashController:
+            checkPath = "/version"
+        case .openWRT:
+            checkPath = "/version" // OpenWRT 也使用 /version
+        case .surge:
+            checkPath = "/v1/environment" // Surge 使用 /v1/environment
+        }
+
+        guard var request = makeRequest(for: server, path: checkPath) else {
             updateServerStatus(server, status: .error, message: "无效的请求")
             return ServerCheckSummary(name: server.displayName, address: address, success: false, typeText: "", codeText: "N/A", detailText: "无效的请求", durationSeconds: 0)
         }
@@ -368,35 +417,55 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
             let code = httpResponse.statusCode
             switch code {
             case 200:
-                do {
-                    let versionResponse = try JSONDecoder().decode(VersionResponse.self, from: data)
-                    var updatedServer = server
-                    updatedServer.status = .ok
-                    updatedServer.version = versionResponse.version
-                    updatedServer.serverType = determineServerType(from: versionResponse)
-                    updatedServer.errorMessage = nil
-                    updateServer(updatedServer)
-                    let typeText: String = {
-                        switch updatedServer.serverType {
-                        case .meta: return "Meta"
-                        case .premium: return "Premium"
-                        case .singbox: return "Sing-Box"
-                        case .unknown: return "Unknown"
-                        default: return "Unknown"
-                        }
-                    }()
-                    return ServerCheckSummary(name: server.displayName, address: address, success: true, typeText: typeText, codeText: "\(code)", detailText: "OK(v\(versionResponse.version), \(typeText))", durationSeconds: duration)
-                } catch {
-                    if let versionDict = try? JSONDecoder().decode([String: String].self, from: data), let version = versionDict["version"] {
+                // 根据服务器类型处理不同的响应格式
+                switch server.source {
+                case .surge:
+                    // Surge 返回 {"deviceName":"..."} 格式
+                    if let _ = String(data: data, encoding: .utf8),
+                       let deviceDict = try? JSONDecoder().decode([String: String].self, from: data),
+                       let deviceName = deviceDict["deviceName"] {
                         var updatedServer = server
                         updatedServer.status = .ok
-                        updatedServer.version = version
                         updatedServer.errorMessage = nil
                         updateServer(updatedServer)
-                        return ServerCheckSummary(name: server.displayName, address: address, success: true, typeText: "", codeText: "\(code)", detailText: "OK(v\(version))", durationSeconds: duration)
+                        return ServerCheckSummary(name: server.displayName, address: address, success: true, typeText: "Surge", codeText: "\(code)", detailText: "OK(\(deviceName))", durationSeconds: duration)
                     } else {
-                        updateServerStatus(server, status: .error, message: "无效的响应格式")
-                        return ServerCheckSummary(name: server.displayName, address: address, success: false, typeText: "", codeText: "\(code)", detailText: "无效的响应格式", durationSeconds: duration)
+                        updateServerStatus(server, status: .error, message: "无效的 Surge 响应格式")
+                        return ServerCheckSummary(name: server.displayName, address: address, success: false, typeText: "", codeText: "\(code)", detailText: "无效的 Surge 响应格式", durationSeconds: duration)
+                    }
+
+                case .clashController, .openWRT:
+                    // Clash/OpenWRT 返回版本信息
+                    do {
+                        let versionResponse = try JSONDecoder().decode(VersionResponse.self, from: data)
+                        var updatedServer = server
+                        updatedServer.status = .ok
+                        updatedServer.version = versionResponse.version
+                        updatedServer.serverType = determineServerType(from: versionResponse)
+                        updatedServer.errorMessage = nil
+                        updateServer(updatedServer)
+                        let typeText: String = {
+                            switch updatedServer.serverType {
+                            case .meta: return "Meta"
+                            case .premium: return "Premium"
+                            case .singbox: return "Sing-Box"
+                            case .unknown: return "Unknown"
+                            default: return "Unknown"
+                            }
+                        }()
+                        return ServerCheckSummary(name: server.displayName, address: address, success: true, typeText: typeText, codeText: "\(code)", detailText: "OK(v\(versionResponse.version), \(typeText))", durationSeconds: duration)
+                    } catch {
+                        if let versionDict = try? JSONDecoder().decode([String: String].self, from: data), let version = versionDict["version"] {
+                            var updatedServer = server
+                            updatedServer.status = .ok
+                            updatedServer.version = version
+                            updatedServer.errorMessage = nil
+                            updateServer(updatedServer)
+                            return ServerCheckSummary(name: server.displayName, address: address, success: true, typeText: "", codeText: "\(code)", detailText: "OK(v\(version))", durationSeconds: duration)
+                        } else {
+                            updateServerStatus(server, status: .error, message: "无效的响应格式")
+                            return ServerCheckSummary(name: server.displayName, address: address, success: false, typeText: "", codeText: "\(code)", detailText: "无效的响应格式", durationSeconds: duration)
+                        }
                     }
                 }
             case 401:
@@ -658,6 +727,175 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
     }
     
     // 验证 OpenWRT 服务器
+    func validateSurgeServer(_ server: ClashServer) async throws -> (success: Bool, deviceName: String?, surgeVersion: String?, surgeBuild: String?) {
+        let scheme = server.surgeUseSSL ? "https" : "http"
+        let baseURL = "\(scheme)://\(server.url):\(server.port)/v1"
+        logger.info("开始验证 Surge 服务器: \(baseURL)")
+        print("🔍 [DEBUG] Surge 服务器验证 - URL: \(baseURL)")
+        print("🔍 [DEBUG] Surge 服务器验证 - API Key 存在: \(server.surgeKey != nil)")
+        print("🔍 [DEBUG] Surge 服务器验证 - API Key 长度: \(server.surgeKey?.count ?? 0)")
+        print("🔍 [DEBUG] Surge 服务器验证 - API Key 前缀: \(server.surgeKey?.prefix(4) ?? "nil")")
+
+        // 创建一个新的 URLSession 配置
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 3  // Surge API 文档建议 3秒超时
+        config.timeoutIntervalForResource = 3
+
+        // 如果启用了 HTTPS，配置 TLS 设置
+        if server.surgeUseSSL {
+            config.urlCache = nil
+            config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            if #available(iOS 15.0, *) {
+                config.tlsMinimumSupportedProtocolVersion = .TLSv12
+            } else {
+                config.tlsMinimumSupportedProtocolVersion = .TLSv12
+            }
+            config.tlsMaximumSupportedProtocolVersion = .TLSv13
+        }
+
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        activeSessions.append(session)
+
+        do {
+            // 创建环境信息请求
+            guard let environmentURL = URL(string: "\(baseURL)/environment") else {
+                logger.error("环境信息 URL 无效")
+                print("❌ [DEBUG] 环境信息 URL 无效")
+                return (false, nil, nil, nil)
+            }
+
+            var request = URLRequest(url: environmentURL)
+            request.httpMethod = "GET"
+
+            // Surge 使用 x-key 认证头
+            if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
+                request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+                print("🔍 [DEBUG] 设置请求头 x-key: \(surgeKey.prefix(4))****")
+            } else {
+                print("❌ [DEBUG] 未设置 x-key 请求头 - API Key 为空或不存在")
+            }
+
+            logger.info("发送环境信息请求到: \(environmentURL.absoluteString)")
+            print("🔍 [DEBUG] 完整请求 URL: \(environmentURL.absoluteString)")
+            print("🔍 [DEBUG] 请求头: \(request.allHTTPHeaderFields ?? [:])")
+
+            let (data, response) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(Data, URLResponse), Error>) in
+                let task = session.dataTask(with: request) { data, response, error in
+                    if let urlError = error as? URLError {
+                        print("❌ [DEBUG] URL 错误: \(urlError.code.rawValue) - \(urlError.localizedDescription)")
+                        switch urlError.code {
+                        case .timedOut:
+                            continuation.resume(throwing: NetworkError.timeout(message: "请求超时"))
+                        case .notConnectedToInternet:
+                            continuation.resume(throwing: NetworkError.invalidResponse(message: "网络未连接"))
+                        case .cannotConnectToHost:
+                            continuation.resume(throwing: NetworkError.invalidResponse(message: "无法连接到服务器"))
+                        case .secureConnectionFailed:
+                            continuation.resume(throwing: NetworkError.invalidResponse(message: "SSL/TLS 连接失败"))
+                        case .serverCertificateUntrusted:
+                            continuation.resume(throwing: NetworkError.invalidResponse(message: "证书不信任"))
+                        default:
+                            continuation.resume(throwing: NetworkError.invalidResponse(message: urlError.localizedDescription))
+                        }
+                    } else if let error = error {
+                        print("❌ [DEBUG] 其他网络错误: \(error.localizedDescription)")
+                        continuation.resume(throwing: error)
+                    } else if let data = data, let response = response {
+                        print("🔍 [DEBUG] 收到响应 - 数据长度: \(data.count) bytes")
+                        continuation.resume(returning: (data, response))
+                    } else {
+                        print("❌ [DEBUG] 未知错误 - 没有数据或响应")
+                        continuation.resume(throwing: URLError(.unknown))
+                    }
+                }
+                task.resume()
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                logger.error("响应不是 HTTP 响应")
+                print("❌ [DEBUG] 响应不是 HTTP 响应")
+                throw NetworkError.invalidResponse(message: "无效的响应")
+            }
+
+            logger.info("Surge 服务器响应状态码: \(httpResponse.statusCode)")
+            print("🔍 [DEBUG] 响应状态码: \(httpResponse.statusCode)")
+            print("🔍 [DEBUG] 响应头: \(httpResponse.allHeaderFields)")
+
+            // 打印响应体
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("🔍 [DEBUG] 响应体: \(responseString)")
+                logger.info("Surge 环境信息响应: \(responseString)")
+            } else {
+                print("❌ [DEBUG] 无法解析响应体")
+            }
+
+            // 检查响应状态码
+            switch httpResponse.statusCode {
+            case 200:
+                print("✅ [DEBUG] 状态码 200 - 验证成功")
+
+                // 解析 deviceName
+                var deviceName: String? = nil
+                if let _ = String(data: data, encoding: .utf8),
+                   let deviceDict = try? JSONDecoder().decode([String: String].self, from: data),
+                   let extractedDeviceName = deviceDict["deviceName"] {
+                    deviceName = extractedDeviceName
+                    print("🔍 [DEBUG] 解析到 deviceName: \(extractedDeviceName)")
+                } else {
+                    print("⚠️ [DEBUG] 无法解析 deviceName")
+                }
+
+                // 检查响应头中的版本信息 (大小写不敏感)
+                let headers = httpResponse.allHeaderFields
+                let surgeVersionKey = headers.keys.first { ($0 as? String)?.lowercased() == "x-surge-version" } as? String
+                let surgeBuildKey = headers.keys.first { ($0 as? String)?.lowercased() == "x-surge-build" } as? String
+
+                var surgeVersion: String? = nil
+                var surgeBuild: String? = nil
+
+                if let surgeVersionKey = surgeVersionKey, let version = headers[surgeVersionKey] as? String {
+                    surgeVersion = version
+                    logger.info("Surge 版本: \(version)")
+                    print("🔍 [DEBUG] Surge 版本: \(version)")
+                } else {
+                    print("⚠️ [DEBUG] 未找到 x-surge-version 响应头")
+                }
+                if let surgeBuildKey = surgeBuildKey, let build = headers[surgeBuildKey] as? String {
+                    surgeBuild = build
+                    logger.info("Surge 构建号: \(build)")
+                    print("🔍 [DEBUG] Surge 构建号: \(build)")
+                } else {
+                    print("⚠️ [DEBUG] 未找到 x-surge-build 响应头")
+                }
+
+                logger.info("Surge 服务器验证成功")
+                print("✅ [DEBUG] Surge 服务器验证成功")
+                return (true, deviceName, surgeVersion, surgeBuild)
+
+            case 401:
+                logger.error("Surge 服务器认证失败")
+                print("❌ [DEBUG] 状态码 401 - API Key 无效")
+                throw NetworkError.unauthorized(message: "API Key 无效")
+
+            case 403:
+                logger.error("Surge 服务器访问被拒绝")
+                print("❌ [DEBUG] 状态码 403 - 访问被拒绝")
+                throw NetworkError.invalidResponse(message: "访问被拒绝")
+
+            default:
+                logger.error("Surge 服务器返回错误状态码: \(httpResponse.statusCode)")
+                print("❌ [DEBUG] 状态码 \(httpResponse.statusCode) - 未知错误")
+                throw NetworkError.invalidResponse(message: "服务器返回错误: \(httpResponse.statusCode)")
+            }
+
+        } catch {
+            logger.error("验证 Surge 服务器失败: \(error.localizedDescription)")
+            print("❌ [DEBUG] 验证 Surge 服务器失败: \(error.localizedDescription)")
+            print("❌ [DEBUG] 错误类型: \(type(of: error))")
+            return (false, nil, nil, nil)
+        }
+    }
+
     func validateOpenWRTServer(_ server: ClashServer, username: String, password: String) async throws -> Bool {
         let scheme = server.openWRTUseSSL ? "https" : "http"
         guard let openWRTUrl = server.openWRTUrl else {

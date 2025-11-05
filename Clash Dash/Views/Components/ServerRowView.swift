@@ -55,10 +55,28 @@ struct ServerRowView: View {
                     HStack(spacing: 12) {
                         // 服务器来源标签
                         Label {
-                            Text(server.source == .clashController ? "Clash 控制器" : server.luciPackage == .openClash ? "OpenClash" : "Nikki")
+                            Text({
+                                switch server.source {
+                                case .clashController:
+                                    return "Clash 控制器"
+                                case .openWRT:
+                                    return server.luciPackage == .openClash ? "OpenClash" : "Nikki"
+                                case .surge:
+                                    return "Surge"
+                                }
+                            }())
                                 .foregroundColor(.secondary)
                         } icon: {
-                            Image(systemName: server.source == .clashController ? "server.rack" : server.luciPackage == .openClash ? "o.square" : "n.square")
+                            Image(systemName: {
+                                switch server.source {
+                                case .clashController:
+                                    return "server.rack"
+                                case .openWRT:
+                                    return server.luciPackage == .openClash ? "o.square" : "n.square"
+                                case .surge:
+                                    return "waveform.path.ecg"
+                                }
+                            }())
                                 .foregroundColor(.secondary)
                         }
                         .font(.caption)
@@ -67,15 +85,43 @@ struct ServerRowView: View {
                             .foregroundColor(.secondary)
                             .font(.caption)
                         
-                        // 代理模式信息
-                        Label {
-                            Text(ModeUtils.getModeText(settingsViewModel.mode))
-                                .foregroundColor(.secondary)
-                        } icon: {
-                            Image(systemName: ModeUtils.getModeIcon(settingsViewModel.mode))
-                                .foregroundColor(.secondary)
+                        // 代理模式信息或版本信息
+                        if server.source == .surge {
+                            // Surge 显示版本信息
+                            let versionText = {
+                                var text = ""
+                                if let version = server.surgeVersion {
+                                    text = version
+                                }
+                                if let build = server.surgeBuild {
+                                    if !text.isEmpty {
+                                        text += " (\(build))"
+                                    } else {
+                                        text = build
+                                    }
+                                }
+                                return text.isEmpty ? "版本未知" : text
+                            }()
+
+                            Label(title: {
+                                Text(versionText)
+                                    .foregroundColor(.secondary)
+                            }, icon: {
+                                Image(systemName: "info.circle")
+                                    .foregroundColor(.secondary)
+                            })
+                            .font(.caption)
+                        } else {
+                            // 其他控制器显示代理模式信息
+                            Label(title: {
+                                Text(ModeUtils.getModeText(settingsViewModel.mode))
+                                    .foregroundColor(.secondary)
+                            }, icon: {
+                                Image(systemName: ModeUtils.getModeIcon(settingsViewModel.mode))
+                                    .foregroundColor(.secondary)
+                            })
+                            .font(.caption)
                         }
-                        .font(.caption)
                         
                         Spacer()
                     }
