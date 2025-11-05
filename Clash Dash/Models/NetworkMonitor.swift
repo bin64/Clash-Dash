@@ -19,6 +19,7 @@ class NetworkMonitor: ObservableObject {
     private var memoryTask: URLSessionWebSocketTask?
     private var connectionsTask: URLSessionWebSocketTask?
     private var surgeTrafficTimer: Timer? // Surge 流量定时器
+    private var surgeConnectionsTimer: Timer? // Surge 连接定时器
     private let session = URLSession(configuration: .default)
     private var server: ClashServer?
     private var isConnected = [ConnectionType: Bool]()
@@ -74,13 +75,12 @@ class NetworkMonitor: ObservableObject {
             isMonitoring = true
 
             if server.source == .surge {
-                // Surge 服务器：只监控流量，不使用 WebSocket
+                // Surge 服务器：监控流量和连接，不使用 WebSocket
                 startSurgeTrafficMonitoring(server: server)
-                // Surge 不支持 connections 和 memory 监控，设置默认值
+                startSurgeConnectionsMonitoring(server: server)
+                // Surge 不支持 memory 监控，设置默认值
                 DispatchQueue.main.async {
-                    self.activeConnections = 0
                     self.memoryUsage = "N/A"
-                    self.latestConnections = []
                 }
             } else {
                 // Clash/OpenWRT 服务器：使用完整的 WebSocket 监控
@@ -113,6 +113,9 @@ class NetworkMonitor: ObservableObject {
             if surgeTrafficTimer == nil {
                 startSurgeTrafficMonitoring(server: server)
             }
+            if surgeConnectionsTimer == nil {
+                startSurgeConnectionsMonitoring(server: server)
+            }
             // Surge 不需要恢复 WebSocket 连接
         } else {
             // Clash/OpenWRT 服务器：恢复 WebSocket 连接
@@ -142,9 +145,11 @@ class NetworkMonitor: ObservableObject {
             memoryTask?.cancel(with: .goingAway, reason: nil)
         }
 
-        // 停止 Surge 流量监控定时器
+        // 停止 Surge 监控定时器
         surgeTrafficTimer?.invalidate()
         surgeTrafficTimer = nil
+        surgeConnectionsTimer?.invalidate()
+        surgeConnectionsTimer = nil
 
         isConnected.removeAll()
         server = nil
@@ -273,7 +278,80 @@ class NetworkMonitor: ObservableObject {
             }
         }
     }
-    
+
+    // Surge 连接监控相关方法
+    private func startSurgeConnectionsMonitoring(server: ClashServer) {
+        // 停止现有的定时器
+        surgeConnectionsTimer?.invalidate()
+        surgeConnectionsTimer = nil
+
+        // 创建新的定时器，每秒获取一次连接数据
+        surgeConnectionsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self, self.isMonitoring, self.isViewActive else { return }
+            self.fetchSurgeConnectionsData(server: server)
+        }
+
+        // 立即执行一次
+        fetchSurgeConnectionsData(server: server)
+    }
+
+    private func fetchSurgeConnectionsData(server: ClashServer) {
+        guard let baseURL = server.baseURL else { return }
+
+        let connectionsURL = baseURL.appendingPathComponent("requests/active")
+        var request = URLRequest(url: connectionsURL)
+        request.httpMethod = "GET"
+
+        // 设置 Surge API 认证
+        if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
+            request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+        }
+
+        let task = session.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                print("[NetworkMonitor] Surge connections fetch error: \(error.localizedDescription)")
+                return
+            }
+
+            guard let data = data else { return }
+
+            do {
+                let surgeConnections = try JSONDecoder().decode(SurgeRequestData.self, from: data)
+                self.handleSurgeConnectionsData(surgeConnections)
+            } catch {
+                print("[NetworkMonitor] Error decoding Surge connections data: \(error)")
+            }
+        }
+        task.resume()
+    }
+
+    private func handleSurgeConnectionsData(_ surgeConnections: SurgeRequestData) {
+        let activeConnections = surgeConnections.requests.count
+
+        // 提取连接信息，使用 remoteHost 作为显示的连接信息（移除端口号）
+        let connectionAddresses = surgeConnections.requests.compactMap { request -> String? in
+            // 优先使用 remoteHost，如果为空则跳过
+            if !request.remoteHost.isEmpty {
+                // 移除端口号，只保留主机名/IP
+                let hostWithoutPort = request.remoteHost.components(separatedBy: ":").first ?? request.remoteHost
+                return hostWithoutPort
+            }
+            return nil
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // 更新活动连接数
+            self.activeConnections = activeConnections
+
+            // 更新连接列表，最新的在前
+            self.latestConnections = Array(connectionAddresses.reversed())
+        }
+    }
+
     private func connectToTraffic(server: ClashServer) {
         guard let url = getWebSocketURL(for: "traffic", server: server) else { return }
         guard !isConnected[.traffic, default: false] else { return }
@@ -818,4 +896,46 @@ struct SurgeConnectorStat: Codable {
     let srtt: Double       // 平滑 RTT
     let txpackets: Double  // 发送包数
     let txretransmitpackets: Double  // 重传包数
+}
+
+// Surge 请求数据结构
+struct SurgeRequestData: Codable {
+    let requests: [SurgeRequestItem]
+}
+
+struct SurgeRequestItem: Codable {
+    let remoteHost: String            // 远程主机地址
+
+    // 可选字段，避免解析错误
+    let id: Double?
+    let status: String?
+    let method: String?
+    let url: String?
+    let policyName: String?
+    let completed: Bool?
+    let failed: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case remoteHost, id, status, method, url, policyName, completed, failed
+    }
+
+    // 使用自定义初始化器处理可选字段
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        remoteHost = try container.decode(String.self, forKey: .remoteHost)
+
+        // 可选字段使用 decodeIfPresent
+        id = try container.decodeIfPresent(Double.self, forKey: .id)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        method = try container.decodeIfPresent(String.self, forKey: .method)
+        url = try container.decodeIfPresent(String.self, forKey: .url)
+        policyName = try container.decodeIfPresent(String.self, forKey: .policyName)
+        completed = try container.decodeIfPresent(Bool.self, forKey: .completed)
+        failed = try container.decodeIfPresent(Bool.self, forKey: .failed)
+    }
+}
+
+struct SurgeTimingRecord: Codable {
+    let durationInMillisecond: Double
+    let name: String
 } 
