@@ -128,13 +128,23 @@ struct OverviewTab: View {
                                     selectedTab = 3
                                     HapticManager.shared.impact(.light)
                                 }
-                                StatusCard(
-                                    title: "内存使用",
-                                    value: monitor.memoryUsage,
-                                    icon: "memorychip",
-                                    color: .purple,
-                                    monitor: monitor
-                                )
+                                if server.source == .surge {
+                                    StatusCard(
+                                        title: "DNS缓存",
+                                        value: "\(monitor.dnsCacheCount) 条",
+                                        icon: "network",
+                                        color: .blue,
+                                        monitor: monitor
+                                    )
+                                } else {
+                                    StatusCard(
+                                        title: "内存使用",
+                                        value: monitor.memoryUsage,
+                                        icon: "memorychip",
+                                        color: .purple,
+                                        monitor: monitor
+                                    )
+                                }
                             }
                             
                         case .speedChart:
@@ -146,8 +156,8 @@ struct OverviewTab: View {
                                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
                             
                         case .memoryChart:
-                            // 只在 Meta 服务器上显示内存图表
-                            if server.serverType != .premium {
+                            // 只在 Clash/OpenWRT 服务器上显示内存图表，Surge 不支持
+                            if server.source != .surge && server.serverType != .premium {
                                 ChartCard(title: "内存使用", icon: "memorychip") {
                                     Chart {
                                         // 添加预设的网格线和标签
@@ -194,7 +204,9 @@ struct OverviewTab: View {
                             }
                             
                         case .modeSwitch:
-                            ModeSwitchCard(server: server)
+                            if server.source != .surge {
+                                ModeSwitchCard(server: server)
+                            }
                             
                         case .subscription:
                             if !subscriptionManager.subscriptions.isEmpty {

@@ -9,6 +9,7 @@ class NetworkMonitor: ObservableObject {
     @Published var totalDownload = "0 MB"
     @Published var activeConnections = 0
     @Published var memoryUsage = "0 MB"
+    @Published var dnsCacheCount: Int = 0 // DNS 缓存条目数
     @Published var speedHistory: [SpeedRecord] = []
     @Published var memoryHistory: [MemoryRecord] = []
     @Published var rawTotalUpload: Int = 0
@@ -20,6 +21,7 @@ class NetworkMonitor: ObservableObject {
     private var connectionsTask: URLSessionWebSocketTask?
     private var surgeTrafficTimer: Timer? // Surge 流量定时器
     private var surgeConnectionsTimer: Timer? // Surge 连接定时器
+    private var surgeDnsCacheTimer: Timer? // Surge DNS 缓存定时器
     private let session = URLSession(configuration: .default)
     private var server: ClashServer?
     private var isConnected = [ConnectionType: Bool]()
@@ -75,9 +77,10 @@ class NetworkMonitor: ObservableObject {
             isMonitoring = true
 
             if server.source == .surge {
-                // Surge 服务器：监控流量和连接，不使用 WebSocket
+                // Surge 服务器：监控流量、连接和 DNS 缓存，不使用 WebSocket
                 startSurgeTrafficMonitoring(server: server)
                 startSurgeConnectionsMonitoring(server: server)
+                startSurgeDnsCacheMonitoring(server: server)
                 // Surge 不支持 memory 监控，设置默认值
                 DispatchQueue.main.async {
                     self.memoryUsage = "N/A"
@@ -116,6 +119,9 @@ class NetworkMonitor: ObservableObject {
             if surgeConnectionsTimer == nil {
                 startSurgeConnectionsMonitoring(server: server)
             }
+            if surgeDnsCacheTimer == nil {
+                startSurgeDnsCacheMonitoring(server: server)
+            }
             // Surge 不需要恢复 WebSocket 连接
         } else {
             // Clash/OpenWRT 服务器：恢复 WebSocket 连接
@@ -150,6 +156,8 @@ class NetworkMonitor: ObservableObject {
         surgeTrafficTimer = nil
         surgeConnectionsTimer?.invalidate()
         surgeConnectionsTimer = nil
+        surgeDnsCacheTimer?.invalidate()
+        surgeDnsCacheTimer = nil
 
         isConnected.removeAll()
         server = nil
@@ -349,6 +357,65 @@ class NetworkMonitor: ObservableObject {
 
             // 更新连接列表，最新的在前
             self.latestConnections = Array(connectionAddresses.reversed())
+        }
+    }
+
+    // Surge DNS 缓存监控相关方法
+    private func startSurgeDnsCacheMonitoring(server: ClashServer) {
+        // 停止现有的定时器
+        surgeDnsCacheTimer?.invalidate()
+        surgeDnsCacheTimer = nil
+
+        // 创建新的定时器，每5秒获取一次 DNS 缓存数据（频率较低）
+        surgeDnsCacheTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self = self, self.isMonitoring, self.isViewActive else { return }
+            self.fetchSurgeDnsCacheData(server: server)
+        }
+
+        // 立即执行一次
+        fetchSurgeDnsCacheData(server: server)
+    }
+
+    private func fetchSurgeDnsCacheData(server: ClashServer) {
+        guard let baseURL = server.baseURL else { return }
+
+        let dnsURL = baseURL.appendingPathComponent("dns")
+        var request = URLRequest(url: dnsURL)
+        request.httpMethod = "GET"
+
+        // 设置 Surge API 认证
+        if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
+            request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+        }
+
+        let task = session.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                print("[NetworkMonitor] Surge DNS cache fetch error: \(error.localizedDescription)")
+                return
+            }
+
+            guard let data = data else { return }
+
+            do {
+                let dnsData = try JSONDecoder().decode(SurgeDnsData.self, from: data)
+                self.handleSurgeDnsCacheData(dnsData)
+            } catch {
+                print("[NetworkMonitor] Error decoding Surge DNS cache data: \(error)")
+            }
+        }
+        task.resume()
+    }
+
+    private func handleSurgeDnsCacheData(_ dnsData: SurgeDnsData) {
+        let cacheCount = dnsData.dnsCache.count
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // 更新 DNS 缓存条目数
+            self.dnsCacheCount = cacheCount
         }
     }
 
@@ -938,4 +1005,18 @@ struct SurgeRequestItem: Codable {
 struct SurgeTimingRecord: Codable {
     let durationInMillisecond: Double
     let name: String
+}
+
+// Surge DNS 缓存数据结构
+struct SurgeDnsData: Codable {
+    let dnsCache: [SurgeDnsCacheItem]
+}
+
+struct SurgeDnsCacheItem: Codable {
+    let timeCost: Double          // 时间消耗
+    let path: String             // 解析路径
+    let data: [String]           // 解析结果
+    let domain: String           // 域名
+    let server: String           // DNS服务器
+    let expiresTime: Double      // 过期时间
 } 
