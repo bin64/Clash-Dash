@@ -15,6 +15,11 @@ struct MoreView: View {
     @State private var runningTime: String = "未知运行时长"
     @State private var kernelRunningTime: String = "未知运行时长"
     @State private var pluginRunningTime: String = "未知运行时长"
+
+    // Surge 功能开关状态
+    @State private var mitmEnabled: Bool = false
+    @State private var rewriteEnabled: Bool = false
+    @State private var captureEnabled: Bool = false
     
     private let logger = LogManager.shared
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "未知版本"
@@ -27,11 +32,21 @@ struct MoreView: View {
     }
     
     private var versionDisplay: String {
+        if server.source == .surge {
+            guard let version = server.surgeVersion else { return "未知版本" }
+            if let build = server.surgeBuild {
+                return "\(version) (\(build))"
+            }
+            return version
+        }
         guard let version = server.version else { return "未知版本" }
         return version
     }
     
     private var kernelType: String {
+        if server.source == .surge {
+            return "Surge"
+        }
         guard let type = server.serverType else { return "未知内核" }
         switch type {
         case .meta: return "Mihomo (meta)"
@@ -50,7 +65,7 @@ struct MoreView: View {
                 pluginName = String(components[0])
                 pluginVersion = components.count > 1 ? String(components[1]) : "未知版本"
                 logger.info("成功获取插件版本: \(pluginInfo)")
-                
+
                 if server.source == .openWRT {
                     logger.info("开始获取运行时长")
                     let (kernel, plugin) = try await viewModel.getRunningTime(server: server)
@@ -67,17 +82,84 @@ struct MoreView: View {
             }
         }
     }
+
+    // 获取 Surge 功能状态
+    private func fetchSurgeFeatures() {
+        Task {
+            do {
+                logger.info("开始获取 Surge 功能状态")
+                async let mitmStatus = getSurgeFeatureStatus(feature: "mitm")
+                async let rewriteStatus = getSurgeFeatureStatus(feature: "rewrite")
+                async let captureStatus = getSurgeFeatureStatus(feature: "capture")
+
+                let (mitm, rewrite, capture) = try await (mitmStatus, rewriteStatus, captureStatus)
+
+                mitmEnabled = mitm
+                rewriteEnabled = rewrite
+                captureEnabled = capture
+
+                logger.info("成功获取 Surge 功能状态: MitM(\(mitm)), 复写(\(rewrite)), 抓包(\(capture))")
+            } catch {
+                logger.error("获取 Surge 功能状态失败: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // 获取单个 Surge 功能状态
+    private func getSurgeFeatureStatus(feature: String) async throws -> Bool {
+        let scheme = server.surgeUseSSL ? "https" : "http"
+        let url = URL(string: "\(scheme)://\(server.url):\(server.port)/v1/features/\(feature)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+        let response = try JSONDecoder().decode([String: Bool].self, from: data)
+        return response["enabled"] ?? false
+    }
+
+    // 切换 Surge 功能状态
+    private func toggleSurgeFeature(feature: String, enabled: Bool) {
+        Task {
+            do {
+                logger.info("切换 Surge 功能 \(feature) 状态为: \(enabled)")
+                let scheme = server.surgeUseSSL ? "https" : "http"
+                let url = URL(string: "\(scheme)://\(server.url):\(server.port)/v1/features/\(feature)")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+                let body = ["enabled": enabled]
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+                let (_, response) = try await URLSession.secure.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    logger.info("成功切换 Surge 功能 \(feature) 状态")
+                    // 重新获取状态以确认
+                    fetchSurgeFeatures()
+                } else {
+                    logger.error("切换 Surge 功能 \(feature) 状态失败")
+                }
+            } catch {
+                logger.error("切换 Surge 功能 \(feature) 状态失败: \(error.localizedDescription)")
+            }
+        }
+    }
     
     var body: some View {
         List {
-            NavigationLink {
-                SettingsView(server: server)
-            } label: {
-                HStack {
-                    Image(systemName: "gearshape")
-                        .foregroundColor(.blue)
-                        .frame(width: 25)
-                    Text("配置")
+            // Surge 控制器不显示配置菜单
+            if server.source != .surge {
+                NavigationLink {
+                    SettingsView(server: server)
+                } label: {
+                    HStack {
+                        Image(systemName: "gearshape")
+                            .foregroundColor(.blue)
+                            .frame(width: 25)
+                        Text("配置")
+                    }
                 }
             }
             
@@ -92,18 +174,65 @@ struct MoreView: View {
                 }
             }
             
-            // 添加域名查询工具
-            NavigationLink {
-                DNSQueryView(server: server)
-            } label: {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.blue)
-                        .frame(width: 25)
-                    Text("解析")
+            // Surge 控制器不显示解析菜单
+            if server.source != .surge {
+                // 添加域名查询工具
+                NavigationLink {
+                    DNSQueryView(server: server)
+                } label: {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.blue)
+                            .frame(width: 25)
+                        Text("解析")
+                    }
                 }
             }
-            
+
+            // Surge 功能开关
+            if server.source == .surge {
+                Section("Surge 功能控制") {
+                    Toggle(isOn: $mitmEnabled) {
+                        HStack {
+                            Image(systemName: "person.badge.shield.checkmark")
+                                .foregroundColor(.blue)
+                                .frame(width: 25)
+                            Text("MitM")
+                        }
+                    }
+                    .onChange(of: mitmEnabled) { newValue in
+                        HapticManager.shared.impact(.light)
+                        toggleSurgeFeature(feature: "mitm", enabled: newValue)
+                    }
+
+                    Toggle(isOn: $rewriteEnabled) {
+                        HStack {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundColor(.blue)
+                                .frame(width: 25)
+                            Text("复写")
+                        }
+                    }
+                    .onChange(of: rewriteEnabled) { newValue in
+                        HapticManager.shared.impact(.light)
+                        toggleSurgeFeature(feature: "rewrite", enabled: newValue)
+                    }
+
+                    Toggle(isOn: $captureEnabled) {
+                        HStack {
+                            Image(systemName: "record.circle")
+                                .foregroundColor(.blue)
+                                .frame(width: 25)
+                            Text("抓包")
+                        }
+                    }
+                    .onChange(of: captureEnabled) { newValue in
+                        HapticManager.shared.impact(.light)
+                        toggleSurgeFeature(feature: "capture", enabled: newValue)
+                    }
+                }
+            }
+
             // OpenClash 功能组
             if server.luciPackage == .openClash && server.source == .openWRT {
                 Section("OpenClash 插件控制") {
@@ -399,6 +528,9 @@ struct MoreView: View {
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .onAppear {
             fetchPluginVersion()
+            if server.source == .surge {
+                fetchSurgeFeatures()
+            }
         }
     }
 }
