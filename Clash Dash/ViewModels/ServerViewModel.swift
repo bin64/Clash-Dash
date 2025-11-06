@@ -427,6 +427,21 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
                         var updatedServer = server
                         updatedServer.status = .ok
                         updatedServer.errorMessage = nil
+
+                        // 从响应头提取 Surge 版本信息 (大小写不敏感)
+                        let headers = httpResponse.allHeaderFields
+                        let surgeVersionKey = headers.keys.first { ($0 as? String)?.lowercased() == "x-surge-version" } as? String
+                        let surgeBuildKey = headers.keys.first { ($0 as? String)?.lowercased() == "x-surge-build" } as? String
+
+                        if let surgeVersionKey = surgeVersionKey, let version = headers[surgeVersionKey] as? String {
+                            updatedServer.surgeVersion = version
+                            logger.info("更新 Surge 版本: \(version)")
+                        }
+                        if let surgeBuildKey = surgeBuildKey, let build = headers[surgeBuildKey] as? String {
+                            updatedServer.surgeBuild = build
+                            logger.info("更新 Surge 构建号: \(build)")
+                        }
+
                         updateServer(updatedServer)
                         return ServerCheckSummary(name: server.displayName, address: address, success: true, typeText: "Surge", codeText: "\(code)", detailText: "OK(\(deviceName))", durationSeconds: duration)
                     } else {

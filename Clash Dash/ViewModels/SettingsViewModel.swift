@@ -45,10 +45,13 @@ class SettingsViewModel: ObservableObject {
     }
     
     func fetchConfig(server: ClashServer) {
+        // Surge 服务器不支持配置获取
+        guard server.source != .surge else { return }
+
         // logger.debug("开始获取配置...")
-        guard let request = makeRequest(path: "configs", server: server) else { 
+        guard let request = makeRequest(path: "configs", server: server) else {
             logger.error("创建请求失败")
-            return 
+            return
         }
         
         URLSession.secure.dataTask(with: request) { [weak self] data, response, error in
@@ -111,6 +114,9 @@ class SettingsViewModel: ObservableObject {
     }
     
     func updateConfig(_ path: String, value: Any, server: ClashServer, completion: (() -> Void)? = nil) {
+        // Surge 服务器不支持配置更新
+        guard server.source != .surge else { return }
+
         guard var request = makeRequest(path: "configs", server: server) else { return }
         
         request.httpMethod = "PATCH"
@@ -168,6 +174,9 @@ class SettingsViewModel: ObservableObject {
     
     // MARK: - Actions
     func reloadConfig(server: ClashServer) {
+        // Surge 服务器不支持配置重载
+        guard server.source != .surge else { return }
+
         let scheme = server.clashUseSSL ? "https" : "http"
         guard let url = URL(string: "\(scheme)://\(server.url):\(server.port)/configs?force=true") else { return }
         
@@ -194,6 +203,9 @@ class SettingsViewModel: ObservableObject {
     }
     
     func updateGeoDatabase(server: ClashServer) {
+        // Surge 服务器不支持 GEO 数据库更新
+        guard server.source != .surge else { return }
+
         let scheme = server.clashUseSSL ? "https" : "http"
         guard let url = URL(string: "\(scheme)://\(server.url):\(server.port)/configs/geo") else { return }
         
@@ -314,6 +326,9 @@ class SettingsViewModel: ObservableObject {
     }
     
     func getCurrentMode(server: ClashServer, completion: @escaping (String) -> Void) {
+        // Surge 服务器不支持模式获取
+        guard server.source != .surge else { return }
+
         guard let request = makeRequest(path: "configs", server: server) else { return }
         
         URLSession.secure.dataTask(with: request) { data, response, error in
