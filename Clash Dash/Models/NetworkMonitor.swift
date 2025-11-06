@@ -10,6 +10,7 @@ class NetworkMonitor: ObservableObject {
     @Published var activeConnections = 0
     @Published var memoryUsage = "0 MB"
     @Published var dnsCacheCount: Int = 0 // DNS 缓存条目数
+    @Published var dnsData: SurgeDnsData? // 完整的 DNS 数据
     @Published var speedHistory: [SpeedRecord] = []
     @Published var memoryHistory: [MemoryRecord] = []
     @Published var rawTotalUpload: Int = 0
@@ -414,8 +415,9 @@ class NetworkMonitor: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
-            // 更新 DNS 缓存条目数
+            // 更新 DNS 缓存条目数和完整数据
             self.dnsCacheCount = cacheCount
+            self.dnsData = dnsData
         }
     }
 
@@ -1007,16 +1009,26 @@ struct SurgeTimingRecord: Codable {
     let name: String
 }
 
-// Surge DNS 缓存数据结构
+// Surge DNS 数据结构
 struct SurgeDnsData: Codable {
+    let local: [SurgeDnsLocalItem]?
     let dnsCache: [SurgeDnsCacheItem]
 }
 
+struct SurgeDnsLocalItem: Codable {
+    let data: String?            // 数据
+    let comment: String?         // 注释
+    let domain: String           // 域名
+    let source: String?          // 源
+    let server: String?          // DNS服务器
+}
+
 struct SurgeDnsCacheItem: Codable {
-    let timeCost: Double          // 时间消耗
-    let path: String             // 解析路径
-    let data: [String]           // 解析结果
     let domain: String           // 域名
     let server: String           // DNS服务器
+    let logs: [String]?          // 日志
+    let data: [String]           // 解析结果
+    let path: String             // 解析路径
+    let timeCost: Double         // 时间消耗
     let expiresTime: Double      // 过期时间
 } 

@@ -14,6 +14,7 @@ struct OverviewTab: View {
     @AppStorage("autoTestConnectivity") private var autoTestConnectivity = true
     @State private var showingDirectConnectionInfoSheet = false
     @State private var showingProxyConnectionInfoSheet = false
+    @State private var showingDnsCacheView = false
     
     init(server: ClashServer, monitor: NetworkMonitor, selectedTab: Binding<Int>, settingsViewModel: SettingsViewModel, connectivityViewModel: ConnectivityViewModel) {
         self.server = server
@@ -136,6 +137,10 @@ struct OverviewTab: View {
                                         color: .blue,
                                         monitor: monitor
                                     )
+                                    .onTapGesture {
+                                        showingDnsCacheView = true
+                                        HapticManager.shared.impact(.light)
+                                    }
                                 } else {
                                     StatusCard(
                                         title: "内存使用",
@@ -278,6 +283,9 @@ struct OverviewTab: View {
             )
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingDnsCacheView) {
+            DnsCacheView(server: server, monitor: monitor)
         }
     }
 } 
