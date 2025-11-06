@@ -6,6 +6,10 @@ class RulesViewModel: ObservableObject {
     @Published var rules: [Rule] = []
     @Published var providers: [RuleProvider] = []
     @Published var isRefreshingAll = false  // 添加更新全部状态标记
+
+    // Surge 相关数据
+    @Published var surgeRules: [SurgeRule] = []
+    @Published var surgePolicies: [SurgePolicy] = []
     
     let server: ClashServer
     
@@ -101,9 +105,114 @@ class RulesViewModel: ObservableObject {
             return "刚刚"
         }
     }
-    
+
+    // Surge 规则结构
+    struct SurgeRule: Identifiable, Hashable {
+        let rule: String
+        // 注意：ID 现在由数组索引提供，这里保留但不使用
+        var id: String { rule }
+
+        // 解析后的规则组件
+        var type: String = ""
+        var value: String = ""
+        var policy: String = ""
+        var comment: String = ""
+        var isSectionHeader: Bool = false
+        var sectionName: String = ""
+
+        init(rule: String) {
+            self.rule = rule
+            parseRule(rule)
+        }
+
+        private mutating func parseRule(_ rule: String) {
+            let trimmedRule = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // 检查是否是分组标题
+            if trimmedRule.hasPrefix("# > ") {
+                isSectionHeader = true
+                sectionName = String(trimmedRule.dropFirst(4))
+                return
+            }
+
+            // 解析普通规则
+            var rulePart = trimmedRule
+            var commentPart = ""
+
+            // 分离注释部分
+            if let commentIndex = trimmedRule.range(of: " #", options: .backwards) {
+                rulePart = String(trimmedRule[..<commentIndex.lowerBound])
+                commentPart = String(trimmedRule[commentIndex.upperBound...])
+            } else if let commentIndex = trimmedRule.range(of: " //", options: .backwards) {
+                rulePart = String(trimmedRule[..<commentIndex.lowerBound])
+                commentPart = String(trimmedRule[commentIndex.upperBound...])
+            }
+
+            comment = commentPart.trimmingCharacters(in: .whitespaces)
+
+            // 解析规则主体
+            let components = rulePart.split(separator: ",", maxSplits: 2).map { String($0).trimmingCharacters(in: .whitespaces) }
+
+            if components.count >= 1 {
+                type = components[0]
+            }
+
+            if components.count >= 2 {
+                // 处理带引号的值
+                var value = components[1]
+                if value.hasPrefix("\"") && value.hasSuffix("\"") {
+                    value = String(value.dropFirst().dropLast())
+                }
+                self.value = value
+            }
+
+            if components.count >= 3 {
+                // 处理带引号的策略
+                var policy = components[2]
+                if policy.hasPrefix("\"") && policy.hasSuffix("\"") {
+                    policy = String(policy.dropFirst().dropLast())
+                }
+                self.policy = policy
+            }
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(rule)
+        }
+
+        static func == (lhs: SurgeRule, rhs: SurgeRule) -> Bool {
+            lhs.rule == rhs.rule
+        }
+    }
+
+    // Surge 可用策略
+    struct SurgePolicy: Identifiable, Hashable {
+        let name: String
+        var id: String { name }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(name)
+        }
+
+        static func == (lhs: SurgePolicy, rhs: SurgePolicy) -> Bool {
+            lhs.name == rhs.name
+        }
+    }
+
+    // Surge 规则响应
+    struct SurgeRulesResponse: Codable {
+        let rules: [String]
+        let availablePolicies: [String]
+
+        enum CodingKeys: String, CodingKey {
+            case rules
+            case availablePolicies = "available-policies"
+        }
+    }
+
     init(server: ClashServer) {
         self.server = server
+        // 在初始化时立即开始加载数据
         Task { await fetchData() }
     }
     
@@ -111,12 +220,25 @@ class RulesViewModel: ObservableObject {
     func fetchData() async {
         isLoading = true
         defer { isLoading = false }
-        
+
+        // Surge 控制器使用不同的规则获取方式
+        if server.source == .surge {
+            if let surgeData = try? await fetchSurgeRules() {
+                self.surgeRules = surgeData.rules
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#") } // 过滤以 # 开头的规则（包括注释和分组标题）
+                    .map { SurgeRule(rule: $0) }
+                self.surgePolicies = surgeData.availablePolicies.map { SurgePolicy(name: $0) }
+            }
+            self.rules = []
+            self.providers = []
+            return
+        }
+
         // 获取规则
         if let rulesData = try? await fetchRules() {
             self.rules = rulesData.rules
         }
-        
+
         // 获取规则提供者
         if let providersData = try? await fetchProviders() {
             self.providers = providersData.providers.map { name, provider in
@@ -164,7 +286,17 @@ class RulesViewModel: ObservableObject {
         let (data, _) = try await URLSession.secure.data(for: request)
         return try JSONDecoder().decode(ProvidersResponse.self, from: data)
     }
-    
+
+    private func fetchSurgeRules() async throws -> SurgeRulesResponse {
+        let scheme = server.surgeUseSSL ? "https" : "http"
+        let url = URL(string: "\(scheme)://\(server.url):\(server.port)/v1/rules")!
+        var request = URLRequest(url: url)
+        request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+        return try JSONDecoder().decode(SurgeRulesResponse.self, from: data)
+    }
+
     @MainActor
     func refreshProvider(_ name: String) async {
         do {

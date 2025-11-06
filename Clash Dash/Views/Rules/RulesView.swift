@@ -3,34 +3,47 @@ import SwiftUI
 struct RulesView: View {
     let server: ClashServer
     @StateObject private var viewModel: RulesViewModel
-    @State private var selectedTab = RuleTab.rules
+    @State private var selectedTab: RuleTab
     @State private var showSearch = false
     @Environment(\.floatingTabBarVisible) private var floatingTabBarVisible
-    
+
     init(server: ClashServer) {
         self.server = server
-        _viewModel = StateObject(wrappedValue: RulesViewModel(server: server))
+        // 根据服务器类型设置默认选中的标签
+        let defaultTab: RuleTab = server.source == .surge ? .surgeRules : .rules
+        self._selectedTab = State(initialValue: defaultTab)
+        self._viewModel = StateObject(wrappedValue: RulesViewModel(server: server))
     }
     
     enum RuleTab {
         case rules
         case providers
+        case surgeRules
+        case surgePolicies
     }
     
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
                 Picker("规则类型", selection: $selectedTab) {
-                    Text("规则")
-                        .tag(RuleTab.rules)
-                    Text("规则订阅")
-                        .tag(RuleTab.providers)
+                    if server.source == .surge {
+                        Text("规则")
+                            .tag(RuleTab.surgeRules)
+                        Text("可用策略")
+                            .tag(RuleTab.surgePolicies)
+                    } else {
+                        Text("规则")
+                            .tag(RuleTab.rules)
+                        Text("规则订阅")
+                            .tag(RuleTab.providers)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .padding()
                 
                 if showSearch {
-                    ModernSearchBar(text: $viewModel.searchText, placeholder: selectedTab == .rules ? "搜索规则" : "搜索规则订阅")
+                    let placeholder = getSearchPlaceholder()
+                    ModernSearchBar(text: $viewModel.searchText, placeholder: placeholder)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -43,6 +56,12 @@ struct RulesView: View {
                             .transition(.opacity)
                     case .providers:
                         LazyView(providersView)
+                            .transition(.opacity)
+                    case .surgeRules:
+                        LazyView(surgeRulesList)
+                            .transition(.opacity)
+                    case .surgePolicies:
+                        LazyView(surgePoliciesList)
                             .transition(.opacity)
                     }
                 }
@@ -110,9 +129,47 @@ struct RulesView: View {
             }
         }
     }
-    
 
-    
+    private var surgeRulesList: some View {
+        ModernSurgeRulesListView(
+            rules: filteredSurgeRules,
+            searchText: viewModel.searchText
+        )
+    }
+
+    private var surgePoliciesList: some View {
+        ModernSurgePoliciesListView(
+            policies: filteredSurgePolicies,
+            searchText: viewModel.searchText
+        )
+    }
+
+    private var filteredSurgeRules: [RulesViewModel.SurgeRule] {
+        return viewModel.searchText.isEmpty ? viewModel.surgeRules :
+            viewModel.surgeRules.filter { rule in
+                rule.type.localizedCaseInsensitiveContains(viewModel.searchText) ||
+                rule.value.localizedCaseInsensitiveContains(viewModel.searchText) ||
+                rule.policy.localizedCaseInsensitiveContains(viewModel.searchText) ||
+                rule.comment.localizedCaseInsensitiveContains(viewModel.searchText) ||
+                rule.sectionName.localizedCaseInsensitiveContains(viewModel.searchText)
+            }
+    }
+
+    private var filteredSurgePolicies: [RulesViewModel.SurgePolicy] {
+        return viewModel.searchText.isEmpty ? viewModel.surgePolicies :
+            viewModel.surgePolicies.filter { policy in
+                policy.name.localizedCaseInsensitiveContains(viewModel.searchText)
+            }
+    }
+
+    private func getSearchPlaceholder() -> String {
+        if server.source == .surge {
+            return selectedTab == .surgeRules ? "搜索规则" : "搜索可用策略"
+        } else {
+            return selectedTab == .rules ? "搜索规则" : "搜索规则订阅"
+        }
+    }
+
     private var searchButton: some View {
         Button(action: {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -793,6 +850,380 @@ struct BlurView: UIViewRepresentable {
     
     func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
         uiView.effect = UIBlurEffect(style: style)
+    }
+}
+
+// MARK: - Surge 专用组件
+
+// Surge 规则列表
+struct ModernSurgeRulesListView: View {
+    let rules: [RulesViewModel.SurgeRule]
+    let searchText: String
+
+    // 将规则按分组整理，但不显示分组标题
+    private var groupedRules: [RuleSection] {
+        var sections: [RuleSection] = []
+        var currentSection: RuleSection?
+
+        for rule in rules {
+            if rule.isSectionHeader {
+                // 如果有正在处理的section，先添加到结果中
+                if let section = currentSection {
+                    sections.append(section)
+                }
+                // 开始新section，但不包含分组标题（因为用户要求不显示）
+                currentSection = RuleSection(title: rule.sectionName, isSection: true, rules: [])
+            } else {
+                // 如果没有当前section，创建一个默认的
+                if currentSection == nil {
+                    currentSection = RuleSection(title: "", isSection: false, rules: [])
+                }
+                // 添加规则到当前section
+                currentSection?.rules.append(rule)
+            }
+        }
+
+        // 添加最后一个section
+        if let section = currentSection {
+            sections.append(section)
+        }
+
+        return sections
+    }
+
+    // 规则分组结构
+    private struct RuleSection: Identifiable {
+        let id = UUID()
+        let title: String
+        let isSection: Bool
+        var rules: [RulesViewModel.SurgeRule]
+    }
+
+    var body: some View {
+        Group {
+            if rules.isEmpty {
+                SurgeRulesEmptyStateView()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(groupedRules.enumerated()), id: \.offset) { sectionIndex, section in
+                            // 不显示分组标题，只显示该分组下的规则
+                            ForEach(Array(section.rules.enumerated()), id: \.offset) { ruleIndex, rule in
+                                ModernSurgeRuleCard(rule: rule)
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                                        removal: .move(edge: .leading).combined(with: .opacity)
+                                    ))
+                                    .animation(
+                                        .spring(response: 0.5, dampingFraction: 0.8)
+                                            .delay(Double(sectionIndex) * 0.05 + Double(ruleIndex + 1) * 0.02),
+                                        value: section.rules.count
+                                    )
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .background(Color(uiColor: .systemGroupedBackground))
+            }
+        }
+    }
+}
+
+// Surge 策略列表
+struct ModernSurgePoliciesListView: View {
+    let policies: [RulesViewModel.SurgePolicy]
+    let searchText: String
+
+    var body: some View {
+        Group {
+            if policies.isEmpty {
+                SurgePoliciesEmptyStateView()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        ForEach(Array(policies.enumerated()), id: \.offset) { index, policy in
+                            ModernSurgePolicyCard(policy: policy)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                                .animation(
+                                    .spring(response: 0.5, dampingFraction: 0.8)
+                                        .delay(Double(index % 20) * 0.02),
+                                    value: policies.count
+                                )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .background(Color(uiColor: .systemGroupedBackground))
+            }
+        }
+    }
+}
+
+// Surge 规则空状态视图
+struct SurgeRulesEmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.blue.opacity(0.1), Color.purple.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 120, height: 120)
+
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: 48, weight: .light))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.blue, Color.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+
+            VStack(spacing: 8) {
+                Text("暂无 Surge 规则")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+
+                Text("当前控制器没有配置规则")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+}
+
+// Surge 策略空状态视图
+struct SurgePoliciesEmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.green.opacity(0.1), Color.blue.opacity(0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 120, height: 120)
+
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 48, weight: .light))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.green, Color.blue],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+
+            VStack(spacing: 8) {
+                Text("暂无可用策略")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+
+                Text("当前控制器没有配置策略")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+}
+
+// Surge 规则卡片
+struct ModernSurgeRuleCard: View {
+    let rule: RulesViewModel.SurgeRule
+    @State private var isPressed = false
+
+    // 提取应用名称（用于 PROCESS-NAME 类型）
+    private var displayValue: String {
+        if rule.type.lowercased() == "process-name" {
+            // 提取应用名称，例如从 "/Applications/Discover.app/Contents/MacOS/discover" 提取 "discover.app"
+            let value = rule.value
+            
+            // 如果包含 .app，提取应用名称
+            if let appRange = value.range(of: ".app") {
+                let beforeApp = String(value[..<appRange.upperBound])
+                if let lastSlash = beforeApp.lastIndex(of: "/") {
+                    let appName = String(beforeApp[beforeApp.index(after: lastSlash)...])
+                    return appName
+                } else {
+                    return beforeApp
+                }
+            }
+            
+            // 如果没有 .app，提取最后一个路径组件
+            if let lastSlash = value.lastIndex(of: "/") {
+                return String(value[value.index(after: lastSlash)...]) + ".app"
+            }
+            
+            return value
+        }
+        return rule.value
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                // 第一行：VALUE 和 POLICY
+                HStack(alignment: .top, spacing: 12) {
+                    // VALUE - 主标题
+                    Text(displayValue)
+                        .font(.system(.body, design: .default))
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    // POLICY - 右上角，绿色粗体文字
+                    Text(rule.policy)
+                        .font(.system(.caption, design: .default))
+                        .fontWeight(.semibold)
+                        .foregroundColor(.green)
+                        .lineLimit(1)
+                }
+                
+                // 第二行：TYPE 和 COMMENT
+                HStack(alignment: .bottom, spacing: 12) {
+                    // TYPE - 副标题
+                    Text(rule.type)
+                        .font(.system(.subheadline, design: .default))
+                        .fontWeight(.regular)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    // COMMENT - 右下角，灰色文本，与 TYPE 同一水平
+                    if !rule.comment.isEmpty {
+                        Text(rule.comment)
+                            .font(.system(.caption, design: .default))
+                            .fontWeight(.regular)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(
+                            Color.primary.opacity(0.08),
+                            lineWidth: 0.5
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(0.04),
+                    radius: 2,
+                    x: 0,
+                    y: 1
+                )
+        )
+        .scaleEffect(isPressed ? 0.98 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isPressed)
+        .onTapGesture {
+            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+            impactFeedback.impactOccurred()
+
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                isPressed = true
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                    isPressed = false
+                }
+            }
+        }
+    }
+}
+
+// Surge 策略卡片
+struct ModernSurgePolicyCard: View {
+    let policy: RulesViewModel.SurgePolicy
+    @State private var isPressed = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                // 左侧策略名称
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(policy.name)
+                        .font(.system(.subheadline, design: .rounded))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: isPressed ?
+                                    [Color.orange.opacity(0.3), Color.red.opacity(0.3)] :
+                                    [Color.primary.opacity(0.05), Color.primary.opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: isPressed ? 1.0 : 0.5
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(isPressed ? 0.06 : 0.03),
+                    radius: isPressed ? 8 : 4,
+                    x: 0,
+                    y: isPressed ? 3 : 1
+                )
+        )
+        .scaleEffect(isPressed ? 0.98 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isPressed)
+        .onTapGesture {
+            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+            impactFeedback.impactOccurred()
+
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                isPressed = true
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                    isPressed = false
+                }
+            }
+        }
     }
 }
 
