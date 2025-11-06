@@ -187,16 +187,35 @@ struct ModeSwitchCard: View {
     
     private func fetchCurrentMode() async {
         do {
-            let scheme = server.clashUseSSL ? "https" : "http"
-            let url = URL(string: "\(scheme)://\(server.url):\(server.port)/configs")!
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-            
-            let (data, _) = try await URLSession.secure.data(for: request)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let mode = json["mode"] as? String {
-                await MainActor.run {
-                    selectedMode = mode.lowercased()
+            if server.source == .surge {
+                // Surge 控制器使用 /v1/outbound API
+                let scheme = server.surgeUseSSL ? "https" : "http"
+                let url = URL(string: "\(scheme)://\(server.url):\(server.port)/v1/outbound")!
+                var request = URLRequest(url: url)
+                request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
+
+                let (data, _) = try await URLSession.secure.data(for: request)
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let mode = json["mode"] as? String {
+                    await MainActor.run {
+                        // 将 Surge API 的 "proxy" 映射为内部使用的 "global"
+                        let internalMode = mode.lowercased() == "proxy" ? "global" : mode.lowercased()
+                        selectedMode = internalMode
+                    }
+                }
+            } else {
+                // Clash/OpenWRT 控制器使用 /configs API
+                let scheme = server.clashUseSSL ? "https" : "http"
+                let url = URL(string: "\(scheme)://\(server.url):\(server.port)/configs")!
+                var request = URLRequest(url: url)
+                request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+
+                let (data, _) = try await URLSession.secure.data(for: request)
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let mode = json["mode"] as? String {
+                    await MainActor.run {
+                        selectedMode = mode.lowercased()
+                    }
                 }
             }
         } catch {
@@ -207,30 +226,64 @@ struct ModeSwitchCard: View {
     private func updateMode(_ mode: String) {
         Task {
             do {
-                let scheme = server.clashUseSSL ? "https" : "http"
-                let url = URL(string: "\(scheme)://\(server.url):\(server.port)/configs")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "PATCH"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
-                request.httpBody = try JSONSerialization.data(withJSONObject: ["mode": mode])
-                
-                let (_, response) = try await URLSession.shared.data(for: request)
-                if (response as? HTTPURLResponse)?.statusCode == 204 {
-                    await MainActor.run {
-                        lastChangedMode = mode
-                        // 保存当前模式到 UserDefaults
-                        UserDefaults.standard.set(mode, forKey: "currentMode")
-                        // 发送通知以刷新代理组显示
-                        NotificationCenter.default.post(name: NSNotification.Name("RefreshProxyGroups"), object: nil)
-                        
-                        withAnimation {
-                            showingModeChangeSuccess = true
-                        }
-                        // 2秒后隐藏提示
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if server.source == .surge {
+                    // Surge 控制器使用 /v1/outbound API
+                    // 需要将内部的 "global" 模式映射为 Surge API 的 "proxy"
+                    let apiMode = mode == "global" ? "proxy" : mode
+                    let scheme = server.surgeUseSSL ? "https" : "http"
+                    let url = URL(string: "\(scheme)://\(server.url):\(server.port)/v1/outbound")!
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
+                    request.httpBody = try JSONSerialization.data(withJSONObject: ["mode": apiMode])
+
+                    let (_, response) = try await URLSession.secure.data(for: request)
+                    if let httpResponse = response as? HTTPURLResponse,
+                       (200...299).contains(httpResponse.statusCode) {
+                        await MainActor.run {
+                            lastChangedMode = mode
+                            // 发送通知以刷新代理组显示
+                            NotificationCenter.default.post(name: NSNotification.Name("RefreshProxyGroups"), object: nil)
+
                             withAnimation {
-                                showingModeChangeSuccess = false
+                                showingModeChangeSuccess = true
+                            }
+                            // 2秒后隐藏提示
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation {
+                                    showingModeChangeSuccess = false
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Clash/OpenWRT 控制器使用 /configs API
+                    let scheme = server.clashUseSSL ? "https" : "http"
+                    let url = URL(string: "\(scheme)://\(server.url):\(server.port)/configs")!
+                    var request = URLRequest(url: url)
+                    request.httpMethod = "PATCH"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+                    request.httpBody = try JSONSerialization.data(withJSONObject: ["mode": mode])
+
+                    let (_, response) = try await URLSession.shared.data(for: request)
+                    if (response as? HTTPURLResponse)?.statusCode == 204 {
+                        await MainActor.run {
+                            lastChangedMode = mode
+                            // 保存当前模式到 UserDefaults
+                            UserDefaults.standard.set(mode, forKey: "currentMode")
+                            // 发送通知以刷新代理组显示
+                            NotificationCenter.default.post(name: NSNotification.Name("RefreshProxyGroups"), object: nil)
+
+                            withAnimation {
+                                showingModeChangeSuccess = true
+                            }
+                            // 2秒后隐藏提示
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation {
+                                    showingModeChangeSuccess = false
+                                }
                             }
                         }
                     }

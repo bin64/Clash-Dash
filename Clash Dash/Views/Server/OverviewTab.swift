@@ -209,9 +209,7 @@ struct OverviewTab: View {
                             }
                             
                         case .modeSwitch:
-                            if server.source != .surge {
-                                ModeSwitchCard(server: server)
-                            }
+                            ModeSwitchCard(server: server)
                             
                         case .subscription:
                             if !subscriptionManager.subscriptions.isEmpty {
