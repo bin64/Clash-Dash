@@ -131,8 +131,13 @@ class ConnectionsViewModel: ObservableObject, Sendable {
     func startMonitoring(server: ClashServer) {
         self.server = server
         isMonitoring = true
-        
-        connectToConnections(server: server)
+
+        switch server.source {
+        case .surge:
+            startSurgeConnectionsMonitoring()
+        case .clashController, .openWRT:
+            connectToConnections(server: server)
+        }
     }
     
     func stopMonitoring() {
@@ -142,7 +147,10 @@ class ConnectionsViewModel: ObservableObject, Sendable {
         connectionsTask?.cancel()
         connectionsTask = nil
         errorTracker.reset()
-        
+
+        // 停止 Surge 连接监控
+        stopSurgeConnectionsMonitoring()
+
         updateConnectionState(.paused)
     }
     
@@ -512,21 +520,41 @@ class ConnectionsViewModel: ObservableObject, Sendable {
     }
     
     private func makeRequest(path: String, method: String = "GET") -> URLRequest? {
-        let scheme = server?.clashUseSSL == true ? "https" : "http"
-        guard let server = server,
-              let url = URL(string: "\(scheme)://\(server.url):\(server.port)/\(path)") else {
+        guard let server = server else { return nil }
+
+        let scheme: String
+        let basePath: String
+
+        switch server.source {
+        case .surge:
+            scheme = server.surgeUseSSL ? "https" : "http"
+            basePath = path.hasPrefix("/") ? path : "/v1\(path.hasPrefix("/") ? "" : "/")\(path)"
+        case .clashController, .openWRT:
+            scheme = server.clashUseSSL ? "https" : "http"
+            basePath = path
+        }
+
+        guard let url = URL(string: "\(scheme)://\(server.url):\(server.port)\(basePath)") else {
             return nil
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = method
-        
-        // 添加通用请求头
-        if !server.secret.isEmpty {
-            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+
+        // 添加认证头
+        switch server.source {
+        case .surge:
+            if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
+                request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+            }
+        case .clashController, .openWRT:
+            if !server.secret.isEmpty {
+                request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+            }
         }
+
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
+
         return request
     }
     
@@ -535,13 +563,39 @@ class ConnectionsViewModel: ObservableObject, Sendable {
     }
     
     func closeConnection(_ id: String) {
-        guard let request = makeRequest(path: "connections/\(id)", method: "DELETE") else { return }
-        
+        guard let server = server else { return }
+
+        let request: URLRequest?
+        switch server.source {
+        case .surge:
+            // Surge 使用 POST /requests/kill
+            guard var req = makeRequest(path: "requests/kill", method: "POST") else { return }
+            let body = ["id": Int(id) ?? 0]
+            req.httpBody = try? JSONEncoder().encode(body)
+            request = req
+        case .clashController, .openWRT:
+            // Clash 使用 DELETE /connections/{id}
+            request = makeRequest(path: "connections/\(id)", method: "DELETE")
+        }
+
+        guard let finalRequest = request else { return }
+
         Task {
             do {
-                let (_, response) = try await makeSession().data(for: request)
-                if let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 204 {
+                let (_, response) = try await makeSession().data(for: finalRequest)
+                let success: Bool
+                if let httpResponse = response as? HTTPURLResponse {
+                    switch server.source {
+                    case .surge:
+                        success = (200...299).contains(httpResponse.statusCode)
+                    case .clashController, .openWRT:
+                        success = httpResponse.statusCode == 204
+                    }
+                } else {
+                    success = false
+                }
+
+                if success {
                     await MainActor.run {
                         if let index = connections.firstIndex(where: { $0.id == id }) {
                             let updatedConnection = connections[index]
@@ -568,21 +622,30 @@ class ConnectionsViewModel: ObservableObject, Sendable {
     }
     
     func closeAllConnections() {
-        guard let request = makeRequest(path: "connections", method: "DELETE") else { return }
-        
-        Task {
-            do {
-                let (_, response) = try await makeSession().data(for: request)
-                if let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 204 {
-                    await MainActor.run {
-                        // 清空所有连接相关的数据
-                        connections.removeAll()
-                        previousConnections.removeAll()
+        guard let server = server else { return }
+
+        switch server.source {
+        case .surge:
+            // Surge 不支持批量关闭，需要逐个关闭
+            let connectionIds = connections.map { $0.id }
+            closeConnections(connectionIds)
+        case .clashController, .openWRT:
+            guard let request = makeRequest(path: "connections", method: "DELETE") else { return }
+
+            Task {
+                do {
+                    let (_, response) = try await makeSession().data(for: request)
+                    if let httpResponse = response as? HTTPURLResponse,
+                       httpResponse.statusCode == 204 {
+                        await MainActor.run {
+                            // 清空所有连接相关的数据
+                            connections.removeAll()
+                            previousConnections.removeAll()
+                        }
                     }
+                } catch {
+                    log("关闭所有连接失败: \(error.localizedDescription)")
                 }
-            } catch {
-                log("关闭所有连接失败: \(error.localizedDescription)")
             }
         }
     }
@@ -737,4 +800,381 @@ class ConnectionsViewModel: ObservableObject, Sendable {
     
     // 修改设备缓存为有序数组，以保持设备顺序
     private(set) var deviceCache: [String] = []  // 存储所有出现过的设备IP，按出现顺序排列
+
+    // MARK: - Surge Connections Support
+
+    private var surgeConnectionsTimer: Timer?
+
+    /// Surge 请求数据结构
+    private struct SurgeRequestsData: Codable {
+        let requests: [SurgeRequestItem]
+    }
+
+    /// Surge 请求项数据结构
+    private struct SurgeRequestItem: Codable {
+        let id: Int
+        let remoteAddress: String?
+        let remoteHost: String?
+        let inMaxSpeed: Double
+        let notes: [String]?
+        let inCurrentSpeed: Double
+        let failed: Bool
+        let status: String
+        let outCurrentSpeed: Double
+        let completed: Bool
+        let modified: Bool
+        let sourcePort: Int
+        let completedDate: Double?
+        let outBytes: Double
+        let sourceAddress: String
+        let localAddress: String?
+        let policyName: String
+        let inBytes: Double
+        let method: String
+        let pid: Int
+        let replica: Bool
+        let rule: String
+        let startDate: Double
+        let setupCompletedDate: Double?
+        let outMaxSpeed: Double
+        let processPath: String?
+        let URL: String
+        let timingRecords: [SurgeTimingRecord]?
+
+        // 额外的可选字段
+        let local: Bool?
+        let deviceName: String?
+        let takeoverMode: Int?
+        let pathForStatistics: String?
+        let streamHasResponseBody: Bool?
+        let engineIdentifier: Int?
+        let rejected: Bool?
+        let interface: String?
+        let originalPolicyName: String?
+
+        struct SurgeTimingRecord: Codable {
+            let durationInMillisecond: Double
+            let name: String
+        }
+    }
+
+    /// 开始 Surge 连接监控
+    private func startSurgeConnectionsMonitoring() {
+        guard isMonitoring else { return }
+
+        log("开始 Surge 连接监控")
+
+        // 停止之前的定时器
+        surgeConnectionsTimer?.invalidate()
+        surgeConnectionsTimer = nil
+
+        // 立即获取一次数据
+        Task {
+            await fetchSurgeConnectionsData()
+        }
+
+        // 设置定时器，每2秒获取一次数据
+        surgeConnectionsTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { [weak self] in
+                await self?.fetchSurgeConnectionsData()
+            }
+        }
+
+        updateConnectionState(.connected)
+    }
+
+    /// 获取 Surge 连接数据
+    private func fetchSurgeConnectionsData() async {
+        guard isMonitoring, let server = server, server.source == .surge else { return }
+
+        guard let request = makeRequest(path: "requests/active") else {
+            log("创建 Surge 连接请求失败")
+            return
+        }
+
+        do {
+            let (data, response) = try await makeSession().data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200...299).contains(httpResponse.statusCode) {
+                // 打印 HTTP 错误响应
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("DEBUG: Surge API HTTP 错误响应:")
+                    print("Status Code: \(httpResponse.statusCode)")
+                    print("Response: \(responseString)")
+                }
+                throw URLError(.badServerResponse)
+            }
+
+            let surgeData = try JSONDecoder().decode(SurgeRequestsData.self, from: data)
+            await handleSurgeConnectionsData(surgeData.requests)
+
+        } catch {
+            // 打印原始响应数据用于调试（如果是 JSON 解析错误）
+            if let decodingError = error as? DecodingError {
+                // 重新获取数据来打印（因为原始的 data 变量在 catch 块外）
+                if let (errorData, _) = try? await makeSession().data(for: request),
+                   let responseString = String(data: errorData, encoding: .utf8) {
+                    print("DEBUG: Surge API JSON 解析失败，原始响应数据:")
+                    print("DEBUG: 响应数据长度: \(errorData.count) bytes")
+                    print("DEBUG: 解析错误详情: \(decodingError.localizedDescription)")
+
+                    // 详细打印解码错误信息
+                    switch decodingError {
+                    case .keyNotFound(let key, let context):
+                        print("DEBUG: 缺失的字段: '\(key.stringValue)'")
+                        print("DEBUG: 错误路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
+                        if let lastPath = context.codingPath.last {
+                            print("DEBUG: 问题出现在数组索引: \(lastPath)")
+                        }
+                        print("DEBUG: 原始响应前500字符: \(String(responseString.prefix(500)))")
+
+                        // 尝试解析并显示问题请求的结构
+                        if let data = responseString.data(using: .utf8),
+                           let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                           let requests = json["requests"] as? [[String: Any]] {
+                            if let indexStr = context.codingPath.last?.stringValue,
+                               let index = Int(indexStr.replacingOccurrences(of: "Index ", with: "")),
+                               index < requests.count {
+                                let problematicRequest = requests[index]
+                                print("DEBUG: 问题请求的所有字段: \(problematicRequest.keys.sorted())")
+                                print("DEBUG: 缺失字段 '\(key.stringValue)' 是否存在: \(problematicRequest[key.stringValue] != nil)")
+                            }
+                        }
+
+                    case .typeMismatch(let type, let context):
+                        print("DEBUG: 类型不匹配 - 期望类型: \(type), 实际路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
+                    case .valueNotFound(let type, let context):
+                        print("DEBUG: 值未找到 - 期望类型: \(type), 路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
+                    case .dataCorrupted(let context):
+                        print("DEBUG: 数据损坏: \(context)")
+                    @unknown default:
+                        print("DEBUG: 未知解码错误")
+                    }
+
+                    print("DEBUG: 完整原始响应:")
+                    print(responseString)
+                }
+            } else {
+                // 其他类型的错误
+                print("DEBUG: Surge API 请求失败: \(error.localizedDescription)")
+                // 如果是网络错误，也打印响应数据
+                if let (errorData, _) = try? await makeSession().data(for: request),
+                   let responseString = String(data: errorData, encoding: .utf8) {
+                    print("DEBUG: 错误时的响应数据:")
+                    print(responseString)
+                }
+            }
+
+            log("获取 Surge 连接数据失败: \(error.localizedDescription)")
+            handleConnectionError(error)
+        }
+    }
+
+    /// 处理 Surge 连接数据
+    private func handleSurgeConnectionsData(_ surgeRequests: [SurgeRequestItem]) async {
+        await MainActor.run {
+            var allConnections: [ClashConnection] = []
+            var newDeviceCache: Set<String> = []
+
+            // 获取当前活跃连接的ID集合
+            let currentActiveIds = Set(surgeRequests.map { String($0.id) })
+
+            // 1. 处理当前活跃的连接
+            for request in surgeRequests {
+                // 转换 Surge 请求为 Clash 连接格式
+                let connection = convertSurgeRequestToClashConnection(request)
+                allConnections.append(connection)
+
+                // 添加到设备缓存
+                newDeviceCache.insert(request.sourceAddress)
+            }
+
+            // 2. 保留所有之前已断开的连接（这些连接应该一直保留，直到手动清空）
+            for (id, previousConnection) in previousConnections {
+                if !previousConnection.isAlive {
+                    // 这是一个已断开的连接，保留它
+                    allConnections.append(previousConnection)
+                } else if previousConnection.isAlive && !currentActiveIds.contains(id) {
+                    // 这个连接在上一次是活跃的，但这次没有出现在活跃列表中
+                    // 将其标记为已断开
+                    log("连接 \(id) 已断开")
+                    let disconnectedConnection = ClashConnection(
+                        id: previousConnection.id,
+                        metadata: previousConnection.metadata,
+                        upload: previousConnection.upload,
+                        download: previousConnection.download,
+                        start: previousConnection.start,
+                        chains: previousConnection.chains,
+                        rule: previousConnection.rule,
+                        rulePayload: previousConnection.rulePayload,
+                        downloadSpeed: 0, // 已断开连接速度为0
+                        uploadSpeed: 0,
+                        isAlive: false,
+                        endTime: Date() // 设置结束时间为当前时间
+                    )
+                    allConnections.append(disconnectedConnection)
+                }
+                // 如果连接仍然活跃，我们已经在上面添加了最新的版本
+            }
+
+            // 3. 更新连接列表（活跃连接在前，已断开连接在后）
+            connections = allConnections.sorted { conn1, conn2 in
+                if conn1.isAlive == conn2.isAlive {
+                    // 同状态的按开始时间倒序（最新的在前）
+                    return conn1.start > conn2.start
+                } else {
+                    // 活跃连接在前
+                    return conn1.isAlive && !conn2.isAlive
+                }
+            }
+
+            // 4. 更新设备缓存
+            deviceCache = Array(newDeviceCache).sorted()
+
+            // 5. 更新 previousConnections 用于下次比较
+            // 保存所有当前连接的状态（活跃的和已断开的）
+            var updatedPreviousConnections: [String: ClashConnection] = [:]
+            for connection in allConnections {
+                updatedPreviousConnections[connection.id] = connection
+            }
+            previousConnections = updatedPreviousConnections
+
+            // 6. 更新连接状态
+            updateConnectionState(.connected)
+
+            objectWillChange.send()
+        }
+    }
+
+    /// 将 Surge 请求转换为 Clash 连接格式
+    private func convertSurgeRequestToClashConnection(_ request: SurgeRequestItem) -> ClashConnection {
+        // Surge API 返回的时间戳是标准的 Unix 时间戳（从 1970-01-01 开始的秒数）
+        let startDate = Date(timeIntervalSince1970: request.startDate)
+
+        // 按优先级确定主机地址（只包含主机名，不包含端口）
+        let host: String = {
+            if let remoteHost = request.remoteHost, !remoteHost.isEmpty {
+                // 如果 remoteHost 包含端口，提取主机名部分
+                return extractHostFromRemoteAddress(remoteHost) ?? remoteHost
+            } else if let urlHost = extractHostFromURL(request.URL), !urlHost.isEmpty {
+                return urlHost
+            } else if let remoteAddr = request.remoteAddress, !remoteAddr.isEmpty {
+                return extractCleanIPAddress(remoteAddr)
+            } else {
+                return "unknown"
+            }
+        }()
+
+        // 按优先级确定目标端口
+        let destinationPort: String = {
+            // 1. 从 URL 中提取端口
+            if let url = URL(string: request.URL), let port = url.port {
+                return String(port)
+            }
+            // 2. 从 remoteHost 中提取端口（如果 remoteHost 包含端口）
+            if let remoteHost = request.remoteHost, let port = extractPortFromRemoteAddress(remoteHost) {
+                return port
+            }
+            // 3. 从 remoteAddress 中提取端口
+            if let remoteAddr = request.remoteAddress, let port = extractPortFromRemoteAddress(remoteAddr) {
+                return port
+            }
+            // 4. 使用默认端口（HTTPS 的 443 或 HTTP 的 80）
+            return request.URL.hasPrefix("https://") ? "443" : "80"
+        }()
+
+        // 创建连接元数据
+        let metadata = ConnectionMetadata(
+            network: request.method == "CONNECT" ? "TCP" : "TCP", // Surge 主要是 TCP 连接
+            type: request.method,
+            sourceIP: request.sourceAddress,
+            destinationIP: extractCleanIPAddress(request.remoteAddress ?? ""),
+            sourcePort: String(request.sourcePort),
+            destinationPort: destinationPort,
+            host: host,
+            dnsMode: "normal",
+            processPath: request.processPath,
+            specialProxy: nil,
+            sourceGeoIP: nil,
+            destinationGeoIP: nil,
+            sourceIPASN: nil,
+            destinationIPASN: nil,
+            inboundIP: nil,
+            inboundPort: nil,
+            inboundName: nil
+        )
+
+        // 创建 Clash 连接对象
+        return ClashConnection(
+            id: String(request.id),
+            metadata: metadata,
+            upload: Int(request.outBytes),
+            download: Int(request.inBytes),
+            start: startDate,
+            chains: [request.policyName],
+            rule: request.rule,
+            rulePayload: "",
+            downloadSpeed: request.inCurrentSpeed,
+            uploadSpeed: request.outCurrentSpeed,
+            isAlive: !request.completed && !request.failed
+        )
+    }
+
+    /// 从远程地址中提取纯 IP 地址（去掉括号中的额外信息）
+    private func extractCleanIPAddress(_ remoteAddress: String) -> String {
+        // 首先提取主机部分（去掉端口）
+        let hostPart = extractHostFromRemoteAddress(remoteAddress) ?? remoteAddress
+
+        // 如果主机部分包含括号（如 "106.126.8.12 (Proxy)"），只保留 IP 地址部分
+        if let parenthesisIndex = hostPart.firstIndex(of: "(") {
+            let ipPart = hostPart[..<parenthesisIndex].trimmingCharacters(in: .whitespaces)
+            return String(ipPart)
+        }
+
+        return hostPart
+    }
+
+    /// 从远程地址中提取主机部分
+    private func extractHostFromRemoteAddress(_ remoteAddress: String) -> String? {
+        // remoteAddress 格式可能是 "host:port" 或 "host"
+        let components = remoteAddress.components(separatedBy: ":")
+        return components.first
+    }
+
+    /// 从远程地址中提取端口部分
+    private func extractPortFromRemoteAddress(_ remoteAddress: String) -> String? {
+        // remoteAddress 格式可能是 "host:port" 或 "host"
+        let components = remoteAddress.components(separatedBy: ":")
+        return components.count > 1 ? components.last : nil
+    }
+
+    /// 从 URL 中提取主机名
+    private func extractHostFromURL(_ url: String) -> String? {
+        guard let url = URL(string: url) else { return nil }
+        return url.host
+    }
+
+    /// 停止 Surge 连接监控
+    private func stopSurgeConnectionsMonitoring() {
+        surgeConnectionsTimer?.invalidate()
+        surgeConnectionsTimer = nil
+        // 清理上一次连接记录
+        previousConnections.removeAll()
+        updateConnectionState(.paused)
+    }
+
+    /// 暂停 Surge 连接监控
+    func pauseSurgeConnectionsMonitoring() {
+        surgeConnectionsTimer?.invalidate()
+        surgeConnectionsTimer = nil
+        updateConnectionState(.paused)
+    }
+
+    /// 恢复 Surge 连接监控
+    func resumeSurgeConnectionsMonitoring() {
+        if isMonitoring && server?.source == .surge {
+            startSurgeConnectionsMonitoring()
+        }
+    }
 } 

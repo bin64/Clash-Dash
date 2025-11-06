@@ -821,36 +821,38 @@ struct ConnectionsView: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
-                // 连接状态栏
-                HStack {
-                    // 状态信息
-                    Image(systemName: viewModel.connectionState.statusIcon)
-                        .foregroundColor(viewModel.connectionState.statusColor)
-                        .rotationEffect(viewModel.connectionState.isConnecting ? .degrees(360) : .degrees(0))
-                        .animation(viewModel.connectionState.isConnecting ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.connectionState)
-                    
-                    Text(viewModel.connectionState.message)
+                // 连接状态栏 (仅 Clash/OpenWRT 控制器显示)
+                if server.source != .surge {
+                    HStack {
+                        // 状态信息
+                        Image(systemName: viewModel.connectionState.statusIcon)
+                            .foregroundColor(viewModel.connectionState.statusColor)
+                            .rotationEffect(viewModel.connectionState.isConnecting ? .degrees(360) : .degrees(0))
+                            .animation(viewModel.connectionState.isConnecting ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.connectionState)
+
+                        Text(viewModel.connectionState.message)
+                            .font(.footnote)
+
+                        if viewModel.connectionState.isConnecting {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
+
+                        Spacer()
+
+                        // 流量统计
+                        HStack(spacing: 12) {
+                            Label(viewModel.formatBytes(viewModel.totalDownload), systemImage: "arrow.down.circle.fill")
+                                .foregroundColor(.blue)
+                            Label(viewModel.formatBytes(viewModel.totalUpload), systemImage: "arrow.up.circle.fill")
+                                .foregroundColor(.green)
+                        }
                         .font(.footnote)
-                    
-                    if viewModel.connectionState.isConnecting {
-                        ProgressView()
-                            .scaleEffect(0.8)
                     }
-                    
-                    Spacer()
-                    
-                    // 流量统计
-                    HStack(spacing: 12) {
-                        Label(viewModel.formatBytes(viewModel.totalDownload), systemImage: "arrow.down.circle.fill")
-                            .foregroundColor(.blue)
-                        Label(viewModel.formatBytes(viewModel.totalUpload), systemImage: "arrow.up.circle.fill")
-                            .foregroundColor(.green)
-                    }
-                    .font(.footnote)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(viewModel.connectionState.statusColor.opacity(0.1))
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(viewModel.connectionState.statusColor.opacity(0.1))
                 
                 // 过滤标签栏
                 filterBar
