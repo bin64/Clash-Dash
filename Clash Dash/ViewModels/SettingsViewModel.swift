@@ -114,62 +114,97 @@ class SettingsViewModel: ObservableObject {
     }
     
     func updateConfig(_ path: String, value: Any, server: ClashServer, completion: (() -> Void)? = nil) {
-        // Surge 服务器不支持配置更新
-        guard server.source != .surge else { return }
+        if server.source == .surge {
+            // Surge 控制器使用 /v1/outbound API
+            if path == "mode" {
+                let scheme = server.surgeUseSSL ? "https" : "http"
+                let url = URL(string: "\(scheme)://\(server.url):\(server.port)/v1/outbound")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
 
-        guard var request = makeRequest(path: "configs", server: server) else { return }
-        
-        request.httpMethod = "PATCH"
-        
-        // 如果是模式更新，保存到 UserDefaults
-        if path == "mode" {
-            if let modeValue = value as? String {
-                UserDefaults.standard.set(modeValue, forKey: "currentMode")
-            }
-        }
-        
-        // 构建嵌套的 payload 结构
-        let payload: [String: Any]
-        if path.contains(".") {
-            let components = path.split(separator: ".")
-            let lastKey = String(components.last!)
-            let firstKey = String(components.first!)
-            
-            payload = [
-                firstKey: [
-                    lastKey: value
-                ]
-            ]
-        } else {
-            payload = [path: value]
-        }
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-            if let bodyString = String(data: request.httpBody!, encoding: .utf8) {
-                logger.debug("配置更新请求: \(bodyString)")
-            }
-        } catch {
-            logger.error("配置更新失败: \(error.localizedDescription)")
-            return
-        }
-        
-        URLSession.secure.dataTask(with: request) { data, response, error in
-            if let httpResponse = response as? HTTPURLResponse {
-                if httpResponse.statusCode == 204 {
-                    logger.info("配置更新成功：\(path) = \(value)")
-                    DispatchQueue.main.async {
-                        completion?()
+                // 将内部的 "global" 模式映射为 Surge API 的 "proxy"
+                let apiMode = (value as? String) == "global" ? "proxy" : value
+
+                do {
+                    request.httpBody = try JSONSerialization.data(withJSONObject: ["mode": apiMode])
+                    if let bodyString = String(data: request.httpBody!, encoding: .utf8) {
+                        logger.debug("Surge 配置更新请求: \(bodyString)")
                     }
-                } else {
-                    logger.error("配置更新失败：状态码 \(httpResponse.statusCode)")
+                } catch {
+                    logger.error("Surge 配置更新失败: \(error.localizedDescription)")
+                    return
+                }
+
+                URLSession.secure.dataTask(with: request) { data, response, error in
+                    if let httpResponse = response as? HTTPURLResponse,
+                       (200...299).contains(httpResponse.statusCode) {
+                        logger.info("Surge 配置更新成功：\(path) = \(value)")
+                        DispatchQueue.main.async {
+                            completion?()
+                        }
+                    } else {
+                        logger.error("Surge 配置更新失败：状态码 \(String(describing: (response as? HTTPURLResponse)?.statusCode))")
+                    }
+                }.resume()
+            }
+        } else {
+            // Clash/OpenWRT 控制器使用 /configs API
+            guard var request = makeRequest(path: "configs", server: server) else { return }
+
+            request.httpMethod = "PATCH"
+
+            // 如果是模式更新，保存到 UserDefaults
+            if path == "mode" {
+                if let modeValue = value as? String {
+                    UserDefaults.standard.set(modeValue, forKey: "currentMode")
                 }
             }
-            
-            if let error = error {
-                logger.error("配置更新错误：\(error.localizedDescription)")
+
+            // 构建嵌套的 payload 结构
+            let payload: [String: Any]
+            if path.contains(".") {
+                let components = path.split(separator: ".")
+                let lastKey = String(components.last!)
+                let firstKey = String(components.first!)
+
+                payload = [
+                    firstKey: [
+                        lastKey: value
+                    ]
+                ]
+            } else {
+                payload = [path: value]
             }
-        }.resume()
+
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+                if let bodyString = String(data: request.httpBody!, encoding: .utf8) {
+                    logger.debug("配置更新请求: \(bodyString)")
+                }
+            } catch {
+                logger.error("配置更新失败: \(error.localizedDescription)")
+                return
+            }
+
+            URLSession.secure.dataTask(with: request) { data, response, error in
+                if let httpResponse = response as? HTTPURLResponse {
+                    if httpResponse.statusCode == 204 {
+                        logger.info("配置更新成功：\(path) = \(value)")
+                        DispatchQueue.main.async {
+                            completion?()
+                        }
+                    } else {
+                        logger.error("配置更新失败：状态码 \(httpResponse.statusCode)")
+                    }
+                }
+
+                if let error = error {
+                    logger.error("配置更新错误：\(error.localizedDescription)")
+                }
+            }.resume()
+        }
     }
     
     // MARK: - Actions
@@ -326,20 +361,40 @@ class SettingsViewModel: ObservableObject {
     }
     
     func getCurrentMode(server: ClashServer, completion: @escaping (String) -> Void) {
-        // Surge 服务器不支持模式获取
-        guard server.source != .surge else { return }
+        if server.source == .surge {
+            // Surge 控制器使用 /v1/outbound API
+            let scheme = server.surgeUseSSL ? "https" : "http"
+            let url = URL(string: "\(scheme)://\(server.url):\(server.port)/v1/outbound")!
+            var request = URLRequest(url: url)
+            request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
 
-        guard let request = makeRequest(path: "configs", server: server) else { return }
-        
-        URLSession.secure.dataTask(with: request) { data, response, error in
-            guard let data = data,
-                  let config = try? JSONDecoder().decode(ClashConfig.self, from: data) else {
-                return
-            }
-            
-            DispatchQueue.main.async {
-                completion(config.mode)
-            }
-        }.resume()
+            URLSession.secure.dataTask(with: request) { data, response, error in
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let mode = json["mode"] as? String else {
+                    return
+                }
+
+                DispatchQueue.main.async {
+                    // 将 Surge API 的 "proxy" 映射为内部使用的 "global"
+                    let internalMode = mode.lowercased() == "proxy" ? "global" : mode.lowercased()
+                    completion(internalMode)
+                }
+            }.resume()
+        } else {
+            // Clash/OpenWRT 控制器使用 /configs API
+            guard let request = makeRequest(path: "configs", server: server) else { return }
+
+            URLSession.secure.dataTask(with: request) { data, response, error in
+                guard let data = data,
+                      let config = try? JSONDecoder().decode(ClashConfig.self, from: data) else {
+                    return
+                }
+
+                DispatchQueue.main.async {
+                    completion(config.mode)
+                }
+            }.resume()
+        }
     }
 } 

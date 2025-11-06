@@ -85,43 +85,15 @@ struct ServerRowView: View {
                             .foregroundColor(.secondary)
                             .font(.caption)
                         
-                        // 代理模式信息或版本信息
-                        if server.source == .surge {
-                            // Surge 显示版本信息
-                            let versionText = {
-                                var text = ""
-                                if let version = server.surgeVersion {
-                                    text = version
-                                }
-                                if let build = server.surgeBuild {
-                                    if !text.isEmpty {
-                                        text += " (\(build))"
-                                    } else {
-                                        text = build
-                                    }
-                                }
-                                return text.isEmpty ? "版本未知" : text
-                            }()
-
-                            Label(title: {
-                                Text(versionText)
-                                    .foregroundColor(.secondary)
-                            }, icon: {
-                                Image(systemName: "info.circle")
-                                    .foregroundColor(.secondary)
-                            })
-                            .font(.caption)
-                        } else {
-                            // 其他控制器显示代理模式信息
-                            Label(title: {
-                                Text(ModeUtils.getModeText(settingsViewModel.mode))
-                                    .foregroundColor(.secondary)
-                            }, icon: {
-                                Image(systemName: ModeUtils.getModeIcon(settingsViewModel.mode))
-                                    .foregroundColor(.secondary)
-                            })
-                            .font(.caption)
-                        }
+                        // 显示代理模式信息
+                        Label(title: {
+                            Text(ModeUtils.getModeText(settingsViewModel.mode))
+                                .foregroundColor(.secondary)
+                        }, icon: {
+                            Image(systemName: ModeUtils.getModeIcon(settingsViewModel.mode))
+                                .foregroundColor(.secondary)
+                        })
+                        .font(.caption)
                         
                         Spacer()
                     }
