@@ -93,15 +93,29 @@ struct ServerDetailView: View {
                                 HapticManager.shared.impact(.light)
                             }
                     case 2:
-                        RulesView(server: server)
-                            .onAppear {
-                                HapticManager.shared.impact(.light)
-                            }
+                        if server.source == .surge {
+                            ConnectionsView(server: server)
+                                .onAppear {
+                                    HapticManager.shared.impact(.light)
+                                }
+                        } else {
+                            RulesView(server: server)
+                                .onAppear {
+                                    HapticManager.shared.impact(.light)
+                                }
+                        }
                     case 3:
-                        ConnectionsView(server: server)
-                            .onAppear {
-                                HapticManager.shared.impact(.light)
-                            }
+                        if server.source == .surge {
+                            MoreView(server: server)
+                                .onAppear {
+                                    HapticManager.shared.impact(.light)
+                                }
+                        } else {
+                            ConnectionsView(server: server)
+                                .onAppear {
+                                    HapticManager.shared.impact(.light)
+                                }
+                        }
                     case 4:
                         MoreView(server: server)
                             .onAppear {
@@ -119,7 +133,7 @@ struct ServerDetailView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        FloatingTabBar(selectedTab: $selectedTab, onProxyLongPress: {
+                        FloatingTabBar(selectedTab: $selectedTab, server: server, onProxyLongPress: {
                             HapticManager.shared.impact(.rigid)
                             showProxyQuickMenu = true
                         })
@@ -244,16 +258,18 @@ struct ServerDetailView: View {
                 }
                 .tag(1)
                 
-            // 规则标签页
-            RulesView(server: server)
-                .onAppear {
-                    HapticManager.shared.impact(.light)
-                }
-                .tabItem {
-                    Label("规则", systemImage: "ruler")
-                }
-                .tag(2)
-            
+            // 规则标签页 (仅 Clash/OpenWRT 控制器显示)
+            if server.source != .surge {
+                RulesView(server: server)
+                    .onAppear {
+                        HapticManager.shared.impact(.light)
+                    }
+                    .tabItem {
+                        Label("规则", systemImage: "ruler")
+                    }
+                    .tag(2)
+            }
+
             // 连接标签页
             ConnectionsView(server: server)
                 .onAppear {
@@ -262,8 +278,8 @@ struct ServerDetailView: View {
                 .tabItem {
                     Label("连接", systemImage: "link")
                 }
-                .tag(3)
-            
+                .tag(server.source == .surge ? 2 : 3)
+
             // 更多标签页
             MoreView(server: server)
                 .onAppear {
@@ -272,7 +288,7 @@ struct ServerDetailView: View {
                 .tabItem {
                     Label("更多", systemImage: "ellipsis")
                 }
-                .tag(4)
+                .tag(server.source == .surge ? 3 : 4)
         }
         .background(TabBarLongPressRecognizer(onLongPress: { index in
             if index == 1 { // 代理
@@ -515,6 +531,7 @@ extension EnvironmentValues {
 
 struct FloatingTabBar: View {
     @Binding var selectedTab: Int
+    let server: ClashServer
     @State private var animationOffset: CGFloat = 0
     @State private var indicatorOffset: CGFloat = 0
     @State private var containerWidth: CGFloat = 0
@@ -524,17 +541,37 @@ struct FloatingTabBar: View {
     @State private var previousSelectedTab: Int = 0
     @State private var skewX: CGFloat = 0.0 // 水平倾斜
     @State private var cornerRadius: CGFloat = 20.0 // 动态圆角
-    
+
     @Environment(\.colorScheme) private var colorScheme
     var onProxyLongPress: (() -> Void)? = nil
-    
-    private let tabs = [
-        (index: 0, title: "概览", icon: "chart.line.uptrend.xyaxis"),
-        (index: 1, title: "代理", icon: "globe"),
-        (index: 2, title: "规则", icon: "ruler"),
-        (index: 3, title: "连接", icon: "link"),
-        (index: 4, title: "更多", icon: "ellipsis")
-    ]
+
+    private var tabs: [(index: Int, title: String, icon: String)] {
+        var allTabs = [
+            (index: 0, title: "概览", icon: "chart.line.uptrend.xyaxis"),
+            (index: 1, title: "代理", icon: "globe")
+        ]
+
+        // 规则标签页仅 Clash/OpenWRT 控制器显示
+        if server.source != .surge {
+            allTabs.append((index: 2, title: "规则", icon: "ruler"))
+        }
+
+        // 连接标签页
+        allTabs.append((
+            index: server.source == .surge ? 2 : 3,
+            title: "连接",
+            icon: "link"
+        ))
+
+        // 更多标签页
+        allTabs.append((
+            index: server.source == .surge ? 3 : 4,
+            title: "更多",
+            icon: "ellipsis"
+        ))
+
+        return allTabs
+    }
     
     var body: some View {
         GeometryReader { geometry in
