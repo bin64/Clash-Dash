@@ -463,6 +463,10 @@ struct GroupCard: View {
                                     .foregroundStyle(.blue)
                                     .font(.caption2)
                             }
+                        } else if group.type == "SurgePolicyGroup" {
+                            Image(systemName: "waveform.path.ecg")
+                                .foregroundStyle(.purple)
+                                .font(.caption2)
                         }
                     }
                 }

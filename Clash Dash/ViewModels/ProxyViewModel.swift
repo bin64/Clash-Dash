@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 // 添加 LogManager
 private let logger = LogManager.shared
 
@@ -24,6 +25,151 @@ struct ProxyNode: Identifiable, Hashable {
 struct ProxyHistory: Codable, Hashable {
     let time: String
     let delay: Int
+}
+
+// Surge API 数据模型
+struct SurgePolicies: Codable {
+    let policyGroups: [String]  // 策略组名称列表
+    let proxies: [String]       // 代理策略名称列表
+
+    private enum CodingKeys: String, CodingKey {
+        case policyGroups = "policy-groups"
+        case proxies
+    }
+}
+
+struct SurgePolicy: Codable, Hashable {
+    let name: String
+    let typeDescription: String
+    let isGroup: Bool?
+    let lineHash: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, typeDescription, isGroup, lineHash
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        typeDescription = try container.decode(String.self, forKey: .typeDescription)
+        isGroup = try container.decodeIfPresent(Bool.self, forKey: .isGroup)
+        lineHash = try container.decodeIfPresent(String.self, forKey: .lineHash)
+    }
+}
+
+struct SurgePolicyGroups: Codable {
+    let groups: [String: [SurgePolicy]]
+
+    init(groups: [String: [SurgePolicy]]) {
+        self.groups = groups
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        groups = try container.decode([String: [SurgePolicy]].self, forKey: .groups)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case groups = ""
+    }
+
+    // 自定义编码，因为 Surge API 返回的是动态键名的对象
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(groups, forKey: .groups)
+    }
+}
+
+struct SurgePolicySelection: Codable {
+    let policy: String
+}
+
+struct SurgePolicyTestResult: Codable {
+    // URL 测试策略的结果
+    let time: Double?
+    let winner: String?
+    let results: [String: [String: SurgePolicyTestItem]]?
+
+    // Select 策略测试的结果
+    let policyTestResults: [String: SurgePolicyTestItem]?
+
+    private enum CodingKeys: String, CodingKey {
+        case time, winner, results
+        case policyTestResults
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // 尝试解析 URL 测试格式
+        time = try container.decodeIfPresent(Double.self, forKey: .time)
+        winner = try container.decodeIfPresent(String.self, forKey: .winner)
+        results = try container.decodeIfPresent([String: [String: SurgePolicyTestItem]].self, forKey: .results)
+
+        // 尝试解析 Select 测试格式
+        if results == nil {
+            policyTestResults = try container.decodeIfPresent([String: SurgePolicyTestItem].self, forKey: .policyTestResults)
+        } else {
+            policyTestResults = nil
+        }
+    }
+}
+
+struct SurgePolicyTestItem: Codable {
+    let tcp: Double?
+    let rtt: Double?
+    let receive: Double?
+    let available: Bool?
+    let tfo: Bool?
+
+    // URL 测试特有的字段
+    let time: Double?
+}
+
+// Surge 性能基准测试结果数据模型
+struct SurgeBenchmarkResult: Codable {
+    let lastTestErrorMessage: String?
+    let lastTestScoreInMS: Double
+    let lastTestDate: Double
+
+    // 计算延迟值，遵循 Surge 的逻辑
+    var latency: Int {
+        // 如果 lastTestScoreInMS 为 0 且有错误信息，设为 -1
+        if lastTestScoreInMS == 0 && lastTestErrorMessage != nil {
+            return -1
+        }
+        // 否则返回整数形式的延迟
+        return Int(lastTestScoreInMS.rounded())
+    }
+
+    var hasError: Bool {
+        return lastTestErrorMessage != nil
+    }
+
+    // 将 macOS/iOS 时间戳转换为 Date
+    var lastTestDateAsDate: Date? {
+        // macOS/iOS 时间戳是从 2001 年 1 月 1 日开始的秒数
+        let referenceDate = Date(timeIntervalSinceReferenceDate: 0)
+        let macOSReference = Date(timeIntervalSince1970: 978307200) // 2001-01-01 00:00:00 UTC
+        return Date(timeInterval: lastTestDate, since: macOSReference)
+    }
+
+    // 检查是否需要重新测速（lastTestScoreInMS 为 -1 或者超过2分钟）
+    var needsRetest: Bool {
+        // 如果从未测试过（lastTestScoreInMS 为 -1）
+        if lastTestScoreInMS == -1 {
+            return true
+        }
+
+        // 如果测试过但超过2分钟
+        if let testDate = lastTestDateAsDate {
+            let twoMinutesAgo = Date().addingTimeInterval(-2 * 60)
+            return testDate < twoMinutesAgo
+        }
+
+        // 如果没有测试日期，也需要重新测试
+        return true
+    }
 }
 
 struct ProxyGroup: Identifiable, Hashable {
@@ -175,7 +321,15 @@ class ProxyViewModel: ObservableObject {
     }
     
     private func makeRequest(path: String) -> URLRequest? {
-        let scheme = server.clashUseSSL ? "https" : "http"
+        // 根据服务器类型选择正确的 SSL 设置
+        let useSSL: Bool
+        switch server.source {
+        case .surge:
+            useSSL = server.surgeUseSSL
+        case .clashController, .openWRT:
+            useSSL = server.clashUseSSL
+        }
+        let scheme = useSSL ? "https" : "http"
         
         // 处理路径中的特殊字符
         let encodedPath = path.components(separatedBy: "/").map { component in
@@ -188,7 +342,19 @@ class ProxyViewModel: ObservableObject {
         }
         
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+
+        // 根据服务器类型设置不同的认证头
+        switch server.source {
+        case .surge:
+            // Surge 使用 x-key 认证头
+            if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
+                request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+            }
+        case .clashController, .openWRT:
+            // Clash/OpenWRT 使用 Authorization 头
+            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        }
+
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // print("📡 创建请求: \(url)")
         return request
@@ -196,33 +362,48 @@ class ProxyViewModel: ObservableObject {
     
     @MainActor
     func fetchProxies() async {
-        // print("开始获取代理数据...")
+        logger.info("开始获取代理数据 - 服务器类型: \(server.source)")
+
+        do {
+            if server.source == .surge {
+                // Surge 服务器：使用 Surge API
+                await fetchSurgeProxies()
+            } else {
+                // Clash/OpenWRT 服务器：使用原有的 Clash API
+                await fetchClashProxies()
+            }
+        } catch {
+            logger.error("获取代理数据失败: \(error.localizedDescription)")
+            handleNetworkError(error)
+        }
+    }
+
+    // 获取 Clash 代理数据（原有逻辑）
+    private func fetchClashProxies() async {
         do {
             // 1. 获取 proxies 数据
-            guard let proxiesRequest = makeRequest(path: "proxies") else { 
-                // print("创建 proxies 请求失败")
+            guard let proxiesRequest = makeRequest(path: "proxies") else {
                 logger.error("创建 proxies 请求失败")
-                return 
+                return
             }
-            // print("📡 发送 proxies 请求...")
             let (proxiesData, _) = try await URLSession.secure.data(for: proxiesRequest)
-            
+
             // 2. 获取 providers 数据
-            guard let providersRequest = makeRequest(path: "providers/proxies") else { 
-                // print("创建 providers 请求失败")
+            guard let providersRequest = makeRequest(path: "providers/proxies") else {
                 logger.error("创建 providers 请求失败")
-                return 
+                return
             }
-            // print("📡 发送 providers 请求...")
             let (providersData, _) = try await URLSession.secure.data(for: providersRequest)
-            
+
             var allNodes: [ProxyNode] = []
-            
+            var groupsToUpdate: [ProxyGroup] = []
+            var allProxyDetailsToUpdate: [String: ProxyDetail] = [:]
+
             // 3. 处理 proxies 数据
             if let proxiesResponse = try? JSONDecoder().decode(ProxyResponse.self, from: proxiesData) {
                 // logger.log("成功解析 proxies 数据")
                 logger.info("成功解析 proxies 数据")
-                self.allProxyDetails = proxiesResponse.proxies // 保存所有代理的详细信息
+                allProxyDetailsToUpdate = proxiesResponse.proxies // 保存所有代理的详细信息
 
                 let proxyNodes = proxiesResponse.proxies.map { name, proxy in
                     ProxyNode(
@@ -235,10 +416,10 @@ class ProxyViewModel: ObservableObject {
                     )
                 }
                 allNodes.append(contentsOf: proxyNodes)
-                
+
                 // 更新组数据
 //                let oldGroups = self.groups
-                self.groups = proxiesResponse.proxies.compactMap { name, proxy in
+                groupsToUpdate = proxiesResponse.proxies.compactMap { name, proxy in
                     guard proxy.all != nil else { return nil }
                     if proxy.hidden == true { return nil }
                     return ProxyGroup(
@@ -251,7 +432,7 @@ class ProxyViewModel: ObservableObject {
                     )
                 }
                 // print("代理组数量: \(self.groups.count)")
-                
+
                 // 打印组的变化
                 // for group in self.groups {
                 //     if let oldGroup = oldGroups.first(where: { $0.name == group.name }) {
@@ -264,15 +445,18 @@ class ProxyViewModel: ObservableObject {
                 // print("解析 proxies 数据失败")
                 logger.error("解析 proxies 数据失败")
             }
-            
+
+            var providersToUpdate: [Provider] = []
+            var providerNodesToUpdate: [String: [ProxyNode]] = [:]
+
             // 4. 处理 providers 数据
             if let providersResponse = try? JSONDecoder().decode(ProxyProvidersResponse.self, from: providersData) {
                 // print("成功解析 providers 数据")
                 logger.info("成功解析 providers 数据")
                 // print("📦 代理提供者数量: \(providersResponse.providers.count)")
-                
+
                 // 更新 providers 属性时保持固定排序
-                self.providers = providersResponse.providers.map { name, provider in
+                providersToUpdate = providersResponse.providers.map { name, provider in
                     Provider(
                         name: name,
                         type: provider.type,
@@ -293,7 +477,7 @@ class ProxyViewModel: ObservableObject {
                 }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                 // print("📦 更新后的提供者数量: \(self.providers.count)")
-                
+
                 // 更新 providerNodes
                 for (providerName, provider) in providersResponse.providers {
                     let nodes = provider.proxies.map { proxy in
@@ -306,10 +490,10 @@ class ProxyViewModel: ObservableObject {
                             history: proxy.history
                         )
                     }
-                    self.providerNodes[providerName] = nodes
+                    providerNodesToUpdate[providerName] = nodes
                     // print("📦 提供者 \(providerName) 的节点数量: \(nodes.count)")
                 }
-                
+
                 let providerNodes = providersResponse.providers.flatMap { _, provider in
                     provider.proxies.map { proxy in
                         ProxyNode(
@@ -329,27 +513,32 @@ class ProxyViewModel: ObservableObject {
 //                let jsonString = String(data: providersData, encoding: .utf8)
                     // print("📝 原始 providers 数据:")
                     // print(jsonString)
-                
+
             }
-            
-            // 5. 更新节点数据
-            self.nodes = allNodes
-            // print("总节点数量: \(allNodes.count)")
-            objectWillChange.send()
-            
+
+            // 在主线程上更新所有@Published属性
+            await MainActor.run {
+                self.allProxyDetails = allProxyDetailsToUpdate
+                self.groups = groupsToUpdate
+                self.providers = providersToUpdate
+                self.providerNodes = providerNodesToUpdate
+                self.nodes = allNodes
+                objectWillChange.send()
+            }
+
             // 检查是否所有节点都超时
             let nonSpecialNodes = allNodes.filter { node in
                 !["DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE"].contains(node.name.uppercased())
             }
-            
+
             if !nonSpecialNodes.isEmpty {
                 let allNodesTimeout = nonSpecialNodes.allSatisfy { node in
                     node.delay == 0
                 }
-                
+
                 if allNodesTimeout {
                     logger.warning("检测到所有节点都处于超时状态")
-                    
+
                     // 尝试对 GLOBAL 组进行一次自动测速
                     if self.groups.contains(where: { $0.name == "GLOBAL" }) {
                         logger.info("正在对 GLOBAL 组进行自动测速以尝试刷新节点状态")
@@ -359,9 +548,118 @@ class ProxyViewModel: ObservableObject {
                     }
                 }
             }
-            
+
         } catch {
             logger.error("获取代理错误: \(error)")
+            handleNetworkError(error)
+        }
+    }
+
+    // 获取 Surge 代理数据
+    private func fetchSurgeProxies() async {
+        do {
+            async let policiesTask = fetchSurgePolicies()
+            async let policyGroupsTask = fetchSurgePolicyGroups()
+
+            let (policies, policyGroups) = try await (policiesTask, policyGroupsTask)
+
+            logger.info("获取到 Surge 数据 - 策略组: \(policies.policyGroups.count), 代理: \(policies.proxies.count)")
+
+            // 并发获取所有策略组的当前选择
+            var selectionTasks: [String: Task<String?, Error>] = [:]
+            for groupName in policies.policyGroups {
+                selectionTasks[groupName] = Task {
+                    do {
+                        return try await fetchSurgePolicySelection(groupName: groupName)
+                    } catch {
+                        logger.warning("获取策略组 '\(groupName)' 的当前选择失败: \(error.localizedDescription)")
+                        return nil
+                    }
+                }
+            }
+
+            // 等待所有选择获取完成
+            var groupSelections: [String: String] = [:]
+            for (groupName, task) in selectionTasks {
+                do {
+                    let selection = try await task.value
+                    groupSelections[groupName] = selection ?? ""
+                } catch {
+                    logger.error("等待策略组 '\(groupName)' 选择结果时出错: \(error.localizedDescription)")
+                    groupSelections[groupName] = ""
+                }
+            }
+
+            // 将 Surge 数据转换为 Clash 格式
+            var allNodes: [ProxyNode] = []
+            var proxyGroups: [ProxyGroup] = []
+
+            // 处理策略组
+            for groupName in policies.policyGroups {
+                if let policies = policyGroups.groups[groupName] {
+                    // 获取当前选中的策略（从并发获取的结果中）
+                    let currentSelection = groupSelections[groupName] ?? ""
+
+                    // 获取策略名称列表
+                    let policyNames = policies.map { $0.name }
+
+                    // 创建 ProxyGroup
+                    let proxyGroup = ProxyGroup(
+                        name: groupName,
+                        type: "SurgePolicyGroup",
+                        now: currentSelection,
+                        all: policyNames,
+                        alive: true,
+                        icon: nil
+                    )
+                    proxyGroups.append(proxyGroup)
+
+                    // 将策略转换为 ProxyNode
+                    for policy in policies {
+                        let node = ProxyNode(
+                            id: "\(groupName)_\(policy.name)",
+                            name: policy.name,
+                            type: policy.typeDescription,
+                            alive: true,
+                            delay: 0, // Surge 不提供延迟信息
+                            history: []
+                        )
+                        allNodes.append(node)
+                    }
+                }
+            }
+
+            // 处理单独的代理策略
+            for proxyName in policies.proxies {
+                let node = ProxyNode(
+                    id: "proxy_\(proxyName)",
+                    name: proxyName,
+                    type: "SurgeProxy",
+                    alive: true,
+                    delay: 0,
+                    history: []
+                )
+                allNodes.append(node)
+            }
+
+            // 更新数据
+            await MainActor.run {
+                self.groups = proxyGroups
+                self.nodes = allNodes
+                self.providers = [] // Surge 没有 providers 概念
+                self.providerNodes = [:]
+                self.lastUpdated = Date()
+                objectWillChange.send()
+            }
+
+            logger.info("成功转换 Surge 数据为 Clash 格式 - 组: \(proxyGroups.count), 节点: \(allNodes.count)")
+
+            // 执行智能测速
+            await performSmartSpeedTest(policyGroups: policyGroups)
+
+        } catch {
+            logger.error("获取 Surge 代理数据失败: \(error.localizedDescription)")
+            handleNetworkError(error)
         }
     }
     
@@ -401,10 +699,10 @@ class ProxyViewModel: ObservableObject {
                 }
                 
                 if let delays = try? JSONDecoder().decode([String: Int].self, from: data) {
-                    _ = await MainActor.run {
-                        for (nodeName, delay) in delays {
-                            updateNodeDelay(nodeName: nodeName, delay: delay)
-                        }
+                    for (nodeName, delay) in delays {
+                        await updateNodeDelay(nodeName: nodeName, delay: delay)
+                    }
+                    await MainActor.run {
                         testingNodes.remove(node.name)
                     }
                 }
@@ -447,18 +745,29 @@ class ProxyViewModel: ObservableObject {
     
     @MainActor
     func selectProxy(groupName: String, proxyName: String) async {
-        logger.info("开始切换代理 - 组:\(groupName), 新节点:\(proxyName)")
-        
+        logger.info("开始切换代理 - 服务器类型: \(server.source), 组:\(groupName), 新节点:\(proxyName)")
+
+        if server.source == .surge {
+            // Surge 服务器：使用 Surge API
+            await selectSurgeProxy(groupName: groupName, proxyName: proxyName)
+        } else {
+            // Clash/OpenWRT 服务器：使用原有逻辑
+            await selectClashProxy(groupName: groupName, proxyName: proxyName)
+        }
+    }
+
+    // Clash 代理选择（原有逻辑）
+    private func selectClashProxy(groupName: String, proxyName: String) async {
         // 检查是否需要自动测速
         let shouldAutoTest = UserDefaults.standard.bool(forKey: "autoSpeedTestBeforeSwitch")
         logger.debug("自动测速设置状态: \(shouldAutoTest)")
-        
+
         if shouldAutoTest {
             logger.debug("准备进行自动测速")
             // 只有在需要测速时才获取实际节点并测速
             let nodeToTest = await getActualNode(proxyName)
             logger.debug("获取到实际节点: \(nodeToTest)")
-            
+
             if nodeToTest != "REJECT" {
                 logger.debug("开始测试节点延迟")
                 await testNodeDelay(nodeName: nodeToTest)
@@ -468,31 +777,31 @@ class ProxyViewModel: ObservableObject {
         } else {
             logger.debug("自动测速已关闭，跳过测速步骤")
         }
-        
+
         // 不需要在这里进行 URL 编码，因为 makeRequest 已经处理了
-        guard var request = makeRequest(path: "proxies/\(groupName)") else { 
+        guard var request = makeRequest(path: "proxies/\(groupName)") else {
             logger.error("创建请求失败")
-            return 
+            return
         }
-        
+
         request.httpMethod = "PUT"
         let body = ["name": proxyName]
         request.httpBody = try? JSONEncoder().encode(body)
-        
+
         do {
             let (_, response) = try await URLSession.secure.data(for: request)
             logger.info("切换请求成功")
-            
+
             if server.clashUseSSL,
                let httpsResponse = response as? HTTPURLResponse,
                httpsResponse.statusCode == 400 {
                 return
             }
-            
+
             // 检查是否需要断开旧连接
             if UserDefaults.standard.bool(forKey: "autoDisconnectOldProxy") {
                 logger.info("正在断开旧连接...")
-                
+
                 // 获取当前活跃的连接
                 guard let connectionsRequest = makeRequest(path: "connections") else { return }
                 let (data, _) = try await URLSession.secure.data(for: connectionsRequest)
@@ -558,7 +867,22 @@ class ProxyViewModel: ObservableObject {
             handleNetworkError(error)
         }
     }
-    
+
+    // Surge 代理选择
+    private func selectSurgeProxy(groupName: String, proxyName: String) async {
+        do {
+            try await selectSurgePolicy(groupName: groupName, policyName: proxyName)
+            logger.info("Surge 代理切换完成 - 组: \(groupName), 策略: \(proxyName)")
+
+            // 重新获取代理数据以更新UI
+            await fetchProxies()
+
+        } catch {
+            logger.error("Surge 代理切换失败: \(error.localizedDescription)")
+            handleNetworkError(error)
+        }
+    }
+
     // 添加获取实际节点的方法
     private func getActualNode(_ nodeName: String, visitedGroups: Set<String> = []) async -> String {
         // 防止循环依赖
@@ -626,10 +950,12 @@ class ProxyViewModel: ObservableObject {
             if let delayResponse = try? JSONDecoder().decode(DelayResponse.self, from: data) {
                 logger.debug("节点 \(nodeName) 的新延迟: \(delayResponse.delay)")
                 // 更新节点延迟
-                updateNodeDelay(nodeName: nodeName, delay: delayResponse.delay)
-                testingNodes.remove(nodeName)
-                self.lastDelayTestTime = Date()
-                objectWillChange.send()
+                await updateNodeDelay(nodeName: nodeName, delay: delayResponse.delay)
+                await MainActor.run {
+                    testingNodes.remove(nodeName)
+                    self.lastDelayTestTime = Date()
+                    objectWillChange.send()
+                }
                 // print("延迟更新完成")
             } else {
                 // print("解析延迟数据失败")
@@ -646,24 +972,26 @@ class ProxyViewModel: ObservableObject {
     }
     
     // 修改更新节点延迟的方法
-    private func updateNodeDelay(nodeName: String, delay: Int) {
+    private func updateNodeDelay(nodeName: String, delay: Int) async {
         // logger.log("开始更新节点延迟 - 节点:\(nodeName), 新延迟:\(delay)")
-        
-        if let index = nodes.firstIndex(where: { $0.name == nodeName }) {
-            let oldDelay = nodes[index].delay
-            let updatedNode = ProxyNode(
-                id: nodes[index].id,
-                name: nodeName,
-                type: nodes[index].type,
-                alive: true,
-                delay: delay,
-                history: nodes[index].history
-            )
-            nodes[index] = updatedNode
-            logger.info("节点（\(nodeName)）延迟已更新 - 原延迟:\(oldDelay), 新延迟:\(delay)")
-            objectWillChange.send()
-        } else {
-            logger.error("未找到要更新的节点: \(nodeName)")
+
+        await MainActor.run {
+            if let index = nodes.firstIndex(where: { $0.name == nodeName }) {
+                let oldDelay = nodes[index].delay
+                let updatedNode = ProxyNode(
+                    id: nodes[index].id,
+                    name: nodeName,
+                    type: nodes[index].type,
+                    alive: true,
+                    delay: delay,
+                    history: nodes[index].history
+                )
+                nodes[index] = updatedNode
+                logger.info("节点（\(nodeName)）延迟已更新 - 原延迟:\(oldDelay), 新延迟:\(delay)")
+                objectWillChange.send()
+            } else {
+                logger.error("未找到要更新的节点: \(nodeName)")
+            }
         }
     }
     
@@ -685,6 +1013,19 @@ class ProxyViewModel: ObservableObject {
     // 修改组测速方法
     @MainActor
     func testGroupSpeed(groupName: String) async {
+        logger.info("开始测速 - 服务器类型: \(server.source), 组: \(groupName)")
+
+        if server.source == .surge {
+            // Surge 服务器：使用 Surge API
+            await testSurgeGroupSpeed(groupName: groupName)
+        } else {
+            // Clash/OpenWRT 服务器：使用原有逻辑
+            await testClashGroupSpeed(groupName: groupName)
+        }
+    }
+
+    // Clash 组测速（原有逻辑）
+    private func testClashGroupSpeed(groupName: String) async {
         // print("开始测速组: \(groupName)")
         // print("测速前节点状态:")
         if let group = groups.first(where: { $0.name == groupName }) {
@@ -694,11 +1035,13 @@ class ProxyViewModel: ObservableObject {
                 }
             }
         }
-        
+
         // 添加到测速集合
-        testingGroups.insert(groupName)
-        objectWillChange.send()
-        
+        await MainActor.run {
+            testingGroups.insert(groupName)
+            objectWillChange.send()
+        }
+
         let encodedGroupName = groupName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? groupName
         guard var request = makeRequest(path: "group/\(encodedGroupName)/delay") else {
             // print("创建请求失败")
@@ -738,7 +1081,7 @@ class ProxyViewModel: ObservableObject {
                 for (nodeName, delay) in decodedData {
                     // print("节点: \(nodeName), 新延迟: \(delay)")
                     // 直接更新节点延迟，不需要先 fetchProxies
-                    updateNodeDelay(nodeName: nodeName, delay: delay)
+                    await updateNodeDelay(nodeName: nodeName, delay: delay)
                 }
                 
                 // 如果是 URL-Test 类型的组，自动切换到延迟最低的节点
@@ -776,19 +1119,100 @@ class ProxyViewModel: ObservableObject {
                 }
                 
                 // 更新最后测试时间并通知视图更新
-                self.lastDelayTestTime = Date()
-                objectWillChange.send()
+                await MainActor.run {
+                    self.lastDelayTestTime = Date()
+                    objectWillChange.send()
+                }
             }
         } catch {
             // print("测速过程出错: \(error)")
             handleNetworkError(error)
         }
-        
+
         // print("测速完成，移除测速状态")
-        testingGroups.remove(groupName)
-        objectWillChange.send()
+        await MainActor.run {
+            testingGroups.remove(groupName)
+            objectWillChange.send()
+        }
     }
-    
+
+    // Surge 组测速
+    private func testSurgeGroupSpeed(groupName: String) async {
+        do {
+            // 添加到测速集合
+            await MainActor.run {
+                testingGroups.insert(groupName)
+                objectWillChange.send()
+            }
+
+            logger.info("开始 Surge 策略组测速: \(groupName)")
+
+            // 1. 触发策略组测速
+            _ = try await testSurgePolicyGroup(groupName: groupName)
+
+            // 2. 等待一段时间让测速完成
+            try await Task.sleep(nanoseconds: 500_000_000) // 等待 0.5 秒
+
+            // 3. 获取策略组的策略列表和性能基准测试结果
+            async let policyGroupsTask = fetchSurgePolicyGroups()
+            async let benchmarkResultsTask = fetchSurgeBenchmarkResults()
+
+            let (policyGroups, benchmarkResults) = try await (policyGroupsTask, benchmarkResultsTask)
+
+            logger.info("获取到 \(benchmarkResults.count) 个策略的测速结果")
+
+            // 4. 获取指定策略组的策略列表
+            guard let groupPolicies = policyGroups.groups[groupName] else {
+                logger.warning("未找到策略组 '\(groupName)' 的策略列表")
+                await MainActor.run {
+                    self.lastDelayTestTime = Date()
+                    testingGroups.remove(groupName)
+                    objectWillChange.send()
+                }
+                return
+            }
+
+            // 5. 通过 lineHash 匹配策略与性能数据
+            for policy in groupPolicies {
+                guard let lineHash = policy.lineHash else {
+                    logger.warning("策略 '\(policy.name)' 没有 lineHash，跳过")
+                    continue
+                }
+
+                // 在性能基准结果中查找匹配的策略
+                if let benchmarkResult = benchmarkResults[lineHash] {
+                    let delay = benchmarkResult.latency
+
+                    // 更新对应节点的延迟
+                    await updateNodeDelay(nodeName: policy.name, delay: delay)
+
+                    let errorInfo = benchmarkResult.hasError ? " (错误: \(benchmarkResult.lastTestErrorMessage ?? "未知"))" : ""
+                    print("策略 '\(policy.name)' 测速结果: 延迟=\(delay)ms\(errorInfo)")
+                    logger.info("策略 '\(policy.name)' 测速结果: 延迟=\(delay)ms\(errorInfo)")
+                } else {
+                    logger.warning("策略 '\(policy.name)' (lineHash: \(lineHash)) 没有找到对应的性能基准数据")
+                }
+            }
+
+            logger.info("Surge 策略组测速完成: \(groupName)")
+
+            await MainActor.run {
+                self.lastDelayTestTime = Date()
+                testingGroups.remove(groupName)
+                objectWillChange.send()
+            }
+
+        } catch {
+            logger.error("Surge 策略组测速失败: \(error.localizedDescription)")
+            handleNetworkError(error)
+
+            await MainActor.run {
+                testingGroups.remove(groupName)
+                objectWillChange.send()
+            }
+        }
+    }
+
     @MainActor
     func updateProxyProvider(providerName: String) async {
         let encodedProviderName = providerName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? providerName
@@ -919,9 +1343,9 @@ class ProxyViewModel: ObservableObject {
             }
             
             if let delayResponse = try? JSONDecoder().decode(DelayResponse.self, from: data) {
+                // 更新节点延迟
+                await updateNodeDelay(nodeName: proxyName, delay: delayResponse.delay)
                 await MainActor.run {
-                    // 更新节点延迟
-                    updateNodeDelay(nodeName: proxyName, delay: delayResponse.delay)
                     testingNodes.remove(proxyName)
                     self.lastDelayTestTime = Date()  // 发视图更新
                     objectWillChange.send()
@@ -1451,5 +1875,306 @@ struct ProxyInfo: Codable {
         try container.encodeIfPresent(id, forKey: .id)
         try container.encodeIfPresent(tfo, forKey: .tfo)
         try container.encodeIfPresent(xudp, forKey: .xudp)
+    }
+}
+
+// MARK: - Surge API Methods
+extension ProxyViewModel {
+
+    // 获取 Surge 策略和策略组列表
+    func fetchSurgePolicies() async throws -> SurgePolicies {
+        guard let request = makeRequest(path: "v1/policies") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+        let policies = try JSONDecoder().decode(SurgePolicies.self, from: data)
+        logger.info("成功获取 Surge 策略列表 - 策略组: \(policies.policyGroups.count), 代理: \(policies.proxies.count)")
+        return policies
+    }
+
+    // 获取 Surge 策略组详细信息
+    func fetchSurgePolicyGroups() async throws -> SurgePolicyGroups {
+        guard let request = makeRequest(path: "v1/policy_groups") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+
+        // Surge API 返回的是一个对象，每个键都是策略组名，值是策略数组
+        // 我们需要特殊处理这个响应
+        let jsonObject = try JSONSerialization.jsonObject(with: data, options: [])
+        guard let dict = jsonObject as? [String: [[String: Any]]] else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Invalid policy groups format"))
+        }
+
+        var groups: [String: [SurgePolicy]] = [:]
+        for (groupName, policiesData) in dict {
+            let policies = try policiesData.map { policyDict -> SurgePolicy in
+                let policyData = try JSONSerialization.data(withJSONObject: policyDict, options: [])
+                return try JSONDecoder().decode(SurgePolicy.self, from: policyData)
+            }
+            groups[groupName] = policies
+        }
+
+        // 创建 SurgePolicyGroups 实例
+        let policyGroups = SurgePolicyGroups(groups: groups)
+        return policyGroups
+    }
+
+    // 获取指定策略组当前选择的策略
+    func fetchSurgePolicySelection(groupName: String) async throws -> String {
+        // Surge 使用 surgeUseSSL 设置
+        let scheme = server.surgeUseSSL ? "https" : "http"
+
+        // 对策略组名称进行 URL 编码
+        let encodedGroupName = groupName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? groupName
+
+        // 构建完整的 URL
+        let urlString = "\(scheme)://\(server.url):\(server.port)/v1/policy_groups/select?group_name=\(encodedGroupName)"
+        guard let url = URL(string: urlString) else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+
+        // Surge 使用 x-key 认证头
+        if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
+            request.setValue(surgeKey, forHTTPHeaderField: "x-key")
+        }
+
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // print("request: \(request)")
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+        // print("Response data: \(String(data: data, encoding: .utf8) ?? "Unable to decode data")")
+        let selection = try JSONDecoder().decode(SurgePolicySelection.self, from: data)
+        logger.info("策略组 '\(groupName)' 当前选择: \(selection.policy)")
+        return selection.policy
+    }
+
+    // 选择策略组中的策略
+    func selectSurgePolicy(groupName: String, policyName: String) async throws {
+        guard var request = makeRequest(path: "v1/policy_groups/select") else {
+            throw URLError(.badURL)
+        }
+
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = [
+            "group_name": groupName,
+            "policy": policyName
+        ]
+
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (_, response) = try await URLSession.secure.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+
+        logger.info("成功切换策略组 '\(groupName)' 到策略 '\(policyName)'")
+    }
+
+    // 测试策略组中的所有策略
+    func testSurgePolicyGroup(groupName: String) async throws -> SurgePolicyTestResult {
+        guard var request = makeRequest(path: "v1/policy_groups/test") else {
+            throw URLError(.badURL)
+        }
+
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = ["group_name": groupName]
+        request.httpBody = try JSONEncoder().encode(body)
+
+        // 设置较长的超时时间，因为性能测试可能需要一些时间
+        request.timeoutInterval = 30
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+        let result = try JSONDecoder().decode(SurgePolicyTestResult.self, from: data)
+        logger.info("策略组 '\(groupName)' 性能测试完成")
+        return result
+    }
+
+    // 获取策略性能基准测试结果
+    func fetchSurgeBenchmarkResults() async throws -> [String: SurgeBenchmarkResult] {
+        guard let request = makeRequest(path: "v1/policies/benchmark_results") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+        let results = try JSONDecoder().decode([String: SurgeBenchmarkResult].self, from: data)
+        logger.info("获取到 \(results.count) 个策略的性能基准测试结果")
+        return results
+    }
+
+    // 智能测速：找到最少策略组集合来覆盖所有需要测速的策略
+    private func findOptimalGroupsForRetest(
+        policiesNeedingRetest: Set<String>,
+        policyGroups: SurgePolicyGroups
+    ) -> [String] {
+        // print("DEBUG: 开始寻找最优策略组集合")
+        // print("DEBUG: 需要覆盖的策略: \(Array(policiesNeedingRetest))")
+        // print("DEBUG: 可用策略组数量: \(policyGroups.groups.count)")
+
+        var remainingPolicies = policiesNeedingRetest
+        var selectedGroups: [String] = []
+
+        // 贪心算法：每次选择覆盖最多剩余策略的策略组
+        while !remainingPolicies.isEmpty {
+            // print("DEBUG: 剩余需要覆盖的策略数量: \(remainingPolicies.count)")
+            var bestGroup: String? = nil
+            var maxCoverage = 0
+
+            for (groupName, policies) in policyGroups.groups {
+                let policyNames = Set(policies.map { $0.name })
+                let coverage = policyNames.intersection(remainingPolicies).count
+
+                if coverage > 0 {
+                    // print("DEBUG: 策略组 '\(groupName)' 能覆盖 \(coverage) 个策略")
+                }
+
+                if coverage > maxCoverage {
+                    maxCoverage = coverage
+                    bestGroup = groupName
+                }
+            }
+
+            guard let selectedGroup = bestGroup, maxCoverage > 0 else {
+                // print("DEBUG: 找不到能覆盖更多策略的策略组，停止算法")
+                break
+            }
+
+            // print("DEBUG: 选择策略组 '\(selectedGroup)'，覆盖 \(maxCoverage) 个策略")
+            selectedGroups.append(selectedGroup)
+
+            // 从剩余策略中移除已被覆盖的策略
+            let groupPolicies = Set(policyGroups.groups[selectedGroup]?.map { $0.name } ?? [])
+            let beforeCount = remainingPolicies.count
+            remainingPolicies.subtract(groupPolicies)
+            let afterCount = remainingPolicies.count
+            // print("DEBUG: 移除覆盖的策略后，剩余策略数量: \(beforeCount) -> \(afterCount)")
+        }
+
+        // print("DEBUG: 算法完成，选择策略组: \(selectedGroups)")
+        return selectedGroups
+    }
+
+    // 执行智能测速
+    private func performSmartSpeedTest(policyGroups: SurgePolicyGroups) async {
+        do {
+            logger.info("开始智能测速...")
+
+            // 1. 获取当前的基准测试结果
+            let benchmarkResults = try await fetchSurgeBenchmarkResults()
+
+            // 2. 筛选出需要重新测速的策略（通过 lineHash 匹配）
+            var policiesNeedingRetest = Set<String>() // 存储实际的策略名称
+
+            //  print("DEBUG: 基准测试结果总计: \(benchmarkResults.count) 个策略")
+            // print("DEBUG: 策略组信息:")
+            for (groupName, policies) in policyGroups.groups {
+                // print("  - 策略组 '\(groupName)':")
+                for policy in policies {
+                    //  print("    - '\(policy.name)' (lineHash: \(policy.lineHash ?? "nil"))")
+                }
+            }
+
+            // 通过 lineHash 匹配需要测速的策略
+            for (groupName, policies) in policyGroups.groups {
+                for policy in policies {
+                    guard let lineHash = policy.lineHash else {
+                        // print("DEBUG: 策略 '\(policy.name)' 没有 lineHash，跳过")
+                        continue
+                    }
+
+                    // 检查基准测试结果中是否有这个 lineHash
+                    if let benchmarkResult = benchmarkResults[lineHash], benchmarkResult.needsRetest {
+                        policiesNeedingRetest.insert(policy.name)
+                        // print("DEBUG: 策略 '\(policy.name)' (lineHash: \(lineHash)) 需要重新测速")
+                    } else if let policyHashResult = benchmarkResults["POLICY::\(lineHash)"], policyHashResult.needsRetest {
+                        // 也检查 POLICY::hash 格式
+                        policiesNeedingRetest.insert(policy.name)
+                        // print("DEBUG: 策略 '\(policy.name)' (POLICY::\(lineHash)) 需要重新测速")
+                    }
+                }
+            }
+
+            // print("DEBUG: 需要重新测速的策略名称: \(Array(policiesNeedingRetest))")
+
+            if policiesNeedingRetest.isEmpty {
+                logger.info("没有策略需要重新测速")
+                return
+            }
+
+            logger.info("发现 \(policiesNeedingRetest.count) 个策略需要重新测速")
+
+            // 3. 找到最优的策略组集合
+            let optimalGroups = findOptimalGroupsForRetest(
+                policiesNeedingRetest: policiesNeedingRetest,
+                policyGroups: policyGroups
+            )
+
+            // print("DEBUG: 找到的最优策略组: \(optimalGroups)")
+
+            if optimalGroups.isEmpty {
+                logger.warning("无法找到合适的策略组来进行测速")
+                // print("DEBUG: 需要测速的策略: \(Array(policiesNeedingRetest))")
+                return
+            }
+
+            logger.info("将对 \(optimalGroups.count) 个策略组进行测速: \(optimalGroups.joined(separator: ", "))")
+
+            // 4. 并发对选中的策略组进行测速
+            await withTaskGroup(of: Void.self) { group in
+                for groupName in optimalGroups {
+                    group.addTask {
+                        do {
+                            _ = try await self.testSurgePolicyGroup(groupName: groupName)
+                            logger.info("策略组 '\(groupName)' 测速完成")
+                        } catch {
+                            logger.error("策略组 '\(groupName)' 测速失败: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+
+            // 5. 等待测速完成
+            try await Task.sleep(nanoseconds: 500_000_000) // 等待 0.5 秒
+
+            // 6. 获取最新的基准测试结果
+            let updatedResults = try await fetchSurgeBenchmarkResults()
+
+            // 7. 更新节点延迟信息（通过 lineHash 匹配）
+            for (groupName, policies) in policyGroups.groups {
+                for policy in policies {
+                    guard let lineHash = policy.lineHash else {
+                        continue
+                    }
+
+                    // 检查更新后的基准测试结果
+                    if let benchmarkResult = updatedResults[lineHash] {
+                        let delay = benchmarkResult.latency
+                        await updateNodeDelay(nodeName: policy.name, delay: delay)
+                        // print("DEBUG: 更新策略 '\(policy.name)' (lineHash: \(lineHash)) 的延迟: \(delay)ms")
+                    } else if let policyHashResult = updatedResults["POLICY::\(lineHash)"] {
+                        // 也检查 POLICY::hash 格式
+                        let delay = policyHashResult.latency
+                        await updateNodeDelay(nodeName: policy.name, delay: delay)
+                        // print("DEBUG: 更新策略 '\(policy.name)' (POLICY::\(lineHash)) 的延迟: \(delay)ms")
+                    }
+                }
+            }
+
+            logger.info("智能测速完成，共更新了 \(updatedResults.count) 个策略的延迟信息")
+
+        } catch {
+            logger.error("智能测速失败: \(error.localizedDescription)")
+        }
     }
 } 
