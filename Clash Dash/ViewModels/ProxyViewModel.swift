@@ -175,8 +175,8 @@ struct SurgeBenchmarkResult: Codable {
 struct ProxyGroup: Identifiable, Hashable {
     let id = UUID()
     let name: String
-    let type: String
-    let now: String
+    var type: String
+    var now: String
     let all: [String]
     let alive: Bool
     let icon: String?
@@ -295,6 +295,7 @@ class ProxyViewModel: ObservableObject {
     @Published var savedNodeOrder: [String: [String]] = [:] // 移除 private 修饰符
     @Published var testingProviders: Set<String> = []
     @Published var allProxyDetails: [String: ProxyDetail] = [:] // 新增：保存所有代理的详细信息
+    @Published var groupSelections: [String: String] = [:] // Surge 策略组选择状态
     
     private let server: ClashServer
     private var currentTask: Task<Void, Never>?
@@ -579,14 +580,14 @@ class ProxyViewModel: ObservableObject {
             }
 
             // 等待所有选择获取完成
-            var groupSelections: [String: String] = [:]
+            var localGroupSelections: [String: String] = [:]
             for (groupName, task) in selectionTasks {
                 do {
                     let selection = try await task.value
-                    groupSelections[groupName] = selection ?? ""
+                    localGroupSelections[groupName] = selection ?? ""
                 } catch {
                     logger.error("等待策略组 '\(groupName)' 选择结果时出错: \(error.localizedDescription)")
-                    groupSelections[groupName] = ""
+                    localGroupSelections[groupName] = ""
                 }
             }
 
@@ -598,7 +599,7 @@ class ProxyViewModel: ObservableObject {
             for groupName in policies.policyGroups {
                 if let policies = policyGroups.groups[groupName] {
                     // 获取当前选中的策略（从并发获取的结果中）
-                    let currentSelection = groupSelections[groupName] ?? ""
+                    let currentSelection = localGroupSelections[groupName] ?? ""
 
                     // 获取策略名称列表
                     let policyNames = policies.map { $0.name }
@@ -648,6 +649,7 @@ class ProxyViewModel: ObservableObject {
                 self.nodes = allNodes
                 self.providers = [] // Surge 没有 providers 概念
                 self.providerNodes = [:]
+                self.groupSelections = localGroupSelections // 保存策略组选择状态
                 self.lastUpdated = Date()
                 objectWillChange.send()
             }
@@ -871,11 +873,27 @@ class ProxyViewModel: ObservableObject {
     // Surge 代理选择
     private func selectSurgeProxy(groupName: String, proxyName: String) async {
         do {
+            // 1. 发送 POST 请求切换代理组选择
             try await selectSurgePolicy(groupName: groupName, policyName: proxyName)
-            logger.info("Surge 代理切换完成 - 组: \(groupName), 策略: \(proxyName)")
+            logger.info("Surge 代理切换 POST 请求完成 - 组: \(groupName), 策略: \(proxyName)")
 
-            // 重新获取代理数据以更新UI
-            await fetchProxies()
+            // 2. 发送 GET 请求确认切换结果
+            let confirmedSelection = try await fetchSurgePolicySelection(groupName: groupName)
+            logger.info("Surge 代理切换确认 - 组: \(groupName), 确认的选择: \(confirmedSelection)")
+
+            // 3. 更新 UI 数据
+            await MainActor.run {
+                // 更新 groupSelections
+                self.groupSelections[groupName] = confirmedSelection
+
+                // 更新对应的 ProxyGroup 的 now 属性
+                if let groupIndex = self.groups.firstIndex(where: { $0.name == groupName }) {
+                    self.groups[groupIndex].now = confirmedSelection
+                }
+
+                // 通知 UI 更新
+                self.objectWillChange.send()
+            }
 
         } catch {
             logger.error("Surge 代理切换失败: \(error.localizedDescription)")
