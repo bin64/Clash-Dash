@@ -792,8 +792,17 @@ class SubscriptionManager: ObservableObject, Sendable {
     
     init(server: ClashServer) {
         self.server = server
+
+        // Surge 控制器不支持订阅信息获取
+        guard server.source != .surge else {
+            self.httpClient = DefaultHTTPClient(server: server)
+            self.clashClient = OpenClashClient(server: server, httpClient: self.httpClient) // 这里不会被使用
+            LogManager.shared.info("订阅信息 - Surge 控制器不支持订阅信息获取")
+            return
+        }
+
         self.httpClient = DefaultHTTPClient(server: server)
-        
+
         // 根据 luciPackage 选择对应的客户端
         switch server.luciPackage {
         case .mihomoTProxy:
@@ -815,6 +824,12 @@ class SubscriptionManager: ObservableObject, Sendable {
     }
     
     func fetchSubscriptionInfo(forceRefresh: Bool = false) async {
+        // Surge 控制器不支持订阅信息获取
+        guard server.source != .surge else {
+            LogManager.shared.info("订阅信息 - Surge 控制器不支持订阅信息获取")
+            return
+        }
+
         // 如果不是强制刷新且已有缓存数据，直接返回
         if !forceRefresh && !subscriptions.isEmpty {
             LogManager.shared.info("订阅信息 - 使用现有缓存数据，跳过刷新")
@@ -928,6 +943,12 @@ class SubscriptionManager: ObservableObject, Sendable {
     }
     
     func clearCache() {
+        // Surge 控制器不支持订阅信息缓存
+        guard server.source != .surge else {
+            LogManager.shared.info("订阅信息 - Surge 控制器不支持订阅信息缓存")
+            return
+        }
+
         LogManager.shared.info("订阅信息 - 清除订阅信息缓存")
         cache.clear(for: server)
         subscriptions = []
