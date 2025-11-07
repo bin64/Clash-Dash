@@ -276,13 +276,10 @@ class ServerViewModel: NSObject, ObservableObject, URLSessionDelegate, URLSessio
 
         // 根据服务器类型设置不同的认证方式
         switch server.source {
-        case .clashController:
+        case .clashController, .openWRT:
             if !server.secret.isEmpty {
                 request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
             }
-        case .openWRT:
-            // OpenWRT 使用不同的认证方式，已在其他地方处理
-            break
         case .surge:
             if let surgeKey = server.surgeKey, !surgeKey.isEmpty {
                 request.setValue(surgeKey, forHTTPHeaderField: "x-key")
