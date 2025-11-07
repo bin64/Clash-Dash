@@ -821,26 +821,26 @@ class ConnectionsViewModel: ObservableObject, Sendable {
         let notes: [String]?
         let inCurrentSpeed: Double
         let failed: Bool
-        let status: String
+        let status: String?
         let outCurrentSpeed: Double
         let completed: Bool
         let modified: Bool
         let sourcePort: Int
         let completedDate: Double?
         let outBytes: Double
-        let sourceAddress: String
+        let sourceAddress: String?
         let localAddress: String?
-        let policyName: String
+        let policyName: String?
         let inBytes: Double
-        let method: String
+        let method: String?
         let pid: Int
         let replica: Bool
-        let rule: String
+        let rule: String?
         let startDate: Double
         let setupCompletedDate: Double?
         let outMaxSpeed: Double
         let processPath: String?
-        let URL: String
+        let URL: String?
         let timingRecords: [SurgeTimingRecord]?
 
         // 额外的可选字段
@@ -990,7 +990,9 @@ class ConnectionsViewModel: ObservableObject, Sendable {
                 allConnections.append(connection)
 
                 // 添加到设备缓存
-                newDeviceCache.insert(request.sourceAddress)
+                if let sourceAddress = request.sourceAddress {
+                    newDeviceCache.insert(sourceAddress)
+                }
             }
 
             // 2. 保留所有之前已断开的连接（这些连接应该一直保留，直到手动清空）
@@ -1060,7 +1062,7 @@ class ConnectionsViewModel: ObservableObject, Sendable {
             if let remoteHost = request.remoteHost, !remoteHost.isEmpty {
                 // 如果 remoteHost 包含端口，提取主机名部分
                 return extractHostFromRemoteAddress(remoteHost) ?? remoteHost
-            } else if let urlHost = extractHostFromURL(request.URL), !urlHost.isEmpty {
+            } else if let urlHost = extractHostFromURL(request.URL ?? ""), !urlHost.isEmpty {
                 return urlHost
             } else if let remoteAddr = request.remoteAddress, !remoteAddr.isEmpty {
                 return extractCleanIPAddress(remoteAddr)
@@ -1072,7 +1074,7 @@ class ConnectionsViewModel: ObservableObject, Sendable {
         // 按优先级确定目标端口
         let destinationPort: String = {
             // 1. 从 URL 中提取端口
-            if let url = URL(string: request.URL), let port = url.port {
+            if let url = URL(string: request.URL ?? ""), let port = url.port {
                 return String(port)
             }
             // 2. 从 remoteHost 中提取端口（如果 remoteHost 包含端口）
@@ -1084,14 +1086,14 @@ class ConnectionsViewModel: ObservableObject, Sendable {
                 return port
             }
             // 4. 使用默认端口（HTTPS 的 443 或 HTTP 的 80）
-            return request.URL.hasPrefix("https://") ? "443" : "80"
+            return (request.URL ?? "").hasPrefix("https://") ? "443" : "80"
         }()
 
         // 创建连接元数据
         let metadata = ConnectionMetadata(
-            network: request.method == "CONNECT" ? "TCP" : "TCP", // Surge 主要是 TCP 连接
-            type: request.method,
-            sourceIP: request.sourceAddress,
+            network: (request.method ?? "GET") == "CONNECT" ? "TCP" : "TCP", // Surge 主要是 TCP 连接
+            type: request.method ?? "GET",
+            sourceIP: request.sourceAddress ?? "-",
             destinationIP: extractCleanIPAddress(request.remoteAddress ?? ""),
             sourcePort: String(request.sourcePort),
             destinationPort: destinationPort,
@@ -1115,8 +1117,8 @@ class ConnectionsViewModel: ObservableObject, Sendable {
             upload: Int(request.outBytes),
             download: Int(request.inBytes),
             start: startDate,
-            chains: [request.policyName],
-            rule: request.rule,
+            chains: [request.policyName ?? "-"],
+            rule: request.rule ?? "-",
             rulePayload: "",
             downloadSpeed: request.inCurrentSpeed,
             uploadSpeed: request.outCurrentSpeed,
