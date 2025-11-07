@@ -1392,14 +1392,47 @@ class ProxyViewModel: ObservableObject {
     
     // 修改 getSortedGroups 方法，只保留 GLOBAL 组排序逻辑
     func getSortedGroups() -> [ProxyGroup] {
+        // 对于 Surge 控制器，保持 API 返回的原始顺序
+        if server.source == .surge {
+            // 获取智能显示设置
+            let smartDisplay = UserDefaults.standard.bool(forKey: "smartProxyGroupDisplay")
+
+            // 如果启用了智能显示，根据当前模式过滤组，但保持原始顺序
+            if smartDisplay {
+                // 获取当前模式
+                let currentMode = UserDefaults.standard.string(forKey: "currentMode") ?? "rule"
+
+                // 根据模式过滤组，保持原始顺序
+                let filteredGroups = groups.filter { group in
+                    switch currentMode {
+                    case "global":
+                        // 全局模式下只显示 GLOBAL 组
+                        return group.name == "GLOBAL"
+                    case "rule", "direct":
+                        // 规则和直连模式下隐藏 GLOBAL 组
+                        return group.name != "GLOBAL"
+                    default:
+                        return true
+                    }
+                }
+
+                // 返回过滤后的组，保持原始顺序（即 Surge API 返回的顺序）
+                return filteredGroups
+            }
+
+            // 如果没有启用智能显示，直接返回原始顺序
+            return groups
+        }
+
+        // 对于 Clash/OpenWRT 控制器，使用原来的排序逻辑
         // 获取智能显示设置
         let smartDisplay = UserDefaults.standard.bool(forKey: "smartProxyGroupDisplay")
-        
+
         // 如果启用了智能显示，根据当前模式过滤组
         if smartDisplay {
             // 获取当前模式
             let currentMode = UserDefaults.standard.string(forKey: "currentMode") ?? "rule"
-            
+
             // 根据模式过滤组
             let filteredGroups = groups.filter { group in
                 switch currentMode {
@@ -1413,34 +1446,34 @@ class ProxyViewModel: ObservableObject {
                     return true
                 }
             }
-            
+
             // 对过滤后的组进行排序
             if let globalGroup = groups.first(where: { $0.name == "GLOBAL" }) {
                 var sortIndex = globalGroup.all
                 sortIndex.append("GLOBAL")
-                
+
                 return filteredGroups.sorted { group1, group2 in
                     let index1 = sortIndex.firstIndex(of: group1.name) ?? Int.max
                     let index2 = sortIndex.firstIndex(of: group2.name) ?? Int.max
                     return index1 < index2
                 }
             }
-            
+
             return filteredGroups.sorted { $0.name < $1.name }
         }
-        
+
         // 如果没有启用智能显示，使用原来的排序逻辑
         if let globalGroup = groups.first(where: { $0.name == "GLOBAL" }) {
             var sortIndex = globalGroup.all
             sortIndex.append("GLOBAL")
-            
+
             return groups.sorted { group1, group2 in
                 let index1 = sortIndex.firstIndex(of: group1.name) ?? Int.max
                 let index2 = sortIndex.firstIndex(of: group2.name) ?? Int.max
                 return index1 < index2
             }
         }
-        
+
         return groups.sorted { $0.name < $1.name }
     }
     

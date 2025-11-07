@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import QuartzCore
 
 struct SpeedChartView: View {
     let speedHistory: [SpeedRecord]
@@ -17,10 +18,21 @@ struct SpeedChartView: View {
     }
 }
 
+// CADisplayLink 包装器类
+private class DisplayLinkWrapper: NSObject {
+    var onUpdate: (() -> Void)?
+
+    @objc func updateTime() {
+        onUpdate?()
+    }
+}
+
 // 将原来的实现移到新的 LineChartView 中
 private struct LineChartView: View {
     let speedHistory: [SpeedRecord]
     @State private var now = Date()
+    @State private var displayLink: CADisplayLink?
+    @State private var wrapper = DisplayLinkWrapper()
     
     // 固定显示最近的30条数据，并反转顺序
     private var displayData: [SpeedRecord] {
@@ -219,11 +231,17 @@ private struct LineChartView: View {
             .font(.caption)
         }
         .onAppear {
-            // 启动定时器以更新当前时间
-            let timer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { _ in
-                now = Date()
+            // 使用 CADisplayLink 创建与屏幕刷新率同步的定时器，不受触摸事件影响
+            wrapper.onUpdate = { [self] in
+                self.now = Date()
             }
-            timer.tolerance = 1/60
+            displayLink = CADisplayLink(target: wrapper, selector: #selector(DisplayLinkWrapper.updateTime))
+            displayLink?.add(to: .main, forMode: .common)
+        }
+        .onDisappear {
+            displayLink?.invalidate()
+            displayLink = nil
+            wrapper.onUpdate = nil
         }
     }
 } 
