@@ -296,6 +296,7 @@ class ProxyViewModel: ObservableObject {
     @Published var testingProviders: Set<String> = []
     @Published var allProxyDetails: [String: ProxyDetail] = [:] // 新增：保存所有代理的详细信息
     @Published var groupSelections: [String: String] = [:] // Surge 策略组选择状态
+    @Published var currentOutboundMode: String = "rule" // 当前代理模式 (rule/proxy/direct)
     
     private let server: ClashServer
     private var currentTask: Task<Void, Never>?
@@ -382,6 +383,10 @@ class ProxyViewModel: ObservableObject {
     // 获取 Clash 代理数据（原有逻辑）
     private func fetchClashProxies() async {
         do {
+            // 更新当前代理模式（从 UserDefaults 获取）
+            await MainActor.run {
+                self.currentOutboundMode = UserDefaults.standard.string(forKey: "currentMode") ?? "rule"
+            }
             // 1. 获取 proxies 数据
             guard let proxiesRequest = makeRequest(path: "proxies") else {
                 logger.error("创建 proxies 请求失败")
@@ -566,81 +571,149 @@ class ProxyViewModel: ObservableObject {
 
             logger.info("获取到 Surge 数据 - 策略组: \(policies.policyGroups.count), 代理: \(policies.proxies.count)")
 
-            // 并发获取所有策略组的当前选择
-            var selectionTasks: [String: Task<String?, Error>] = [:]
-            for groupName in policies.policyGroups {
-                selectionTasks[groupName] = Task {
-                    do {
-                        return try await fetchSurgePolicySelection(groupName: groupName)
-                    } catch {
-                        logger.warning("获取策略组 '\(groupName)' 的当前选择失败: \(error.localizedDescription)")
-                        return nil
-                    }
-                }
-            }
+            // 获取当前代理模式
+            let currentMode = try await fetchSurgeOutboundMode()
+            logger.info("当前代理模式: \(currentMode)")
 
-            // 等待所有选择获取完成
-            var localGroupSelections: [String: String] = [:]
-            for (groupName, task) in selectionTasks {
-                do {
-                    let selection = try await task.value
-                    localGroupSelections[groupName] = selection ?? ""
-                } catch {
-                    logger.error("等待策略组 '\(groupName)' 选择结果时出错: \(error.localizedDescription)")
-                    localGroupSelections[groupName] = ""
-                }
+            // 更新当前代理模式属性
+            await MainActor.run {
+                self.currentOutboundMode = currentMode
             }
 
             // 将 Surge 数据转换为 Clash 格式
             var allNodes: [ProxyNode] = []
             var proxyGroups: [ProxyGroup] = []
+            var localGroupSelections: [String: String] = [:]
 
-            // 处理策略组
-            for groupName in policies.policyGroups {
-                if let policies = policyGroups.groups[groupName] {
-                    // 获取当前选中的策略（从并发获取的结果中）
-                    let currentSelection = localGroupSelections[groupName] ?? ""
+            if currentMode == "proxy" {
+                // 全局模式：创建一个 Global Proxy 组，包含所有代理
+                logger.info("全局模式：创建 Global Proxy 组")
 
-                    // 获取策略名称列表
-                    let policyNames = policies.map { $0.name }
+                // 获取 Global 模式的当前选择
+                let globalSelection = try await fetchSurgeGlobalSelection()
 
-                    // 创建 ProxyGroup
-                    let proxyGroup = ProxyGroup(
-                        name: groupName,
-                        type: "SurgePolicyGroup",
-                        now: currentSelection,
-                        all: policyNames,
-                        alive: true,
-                        icon: nil
-                    )
-                    proxyGroups.append(proxyGroup)
+                // 创建 Global Proxy 组，包含所有 proxies 和 policy-groups
+                var allGlobalPolicies: [String] = []
+                allGlobalPolicies.append(contentsOf: policies.proxies)
+                allGlobalPolicies.append(contentsOf: policies.policyGroups)
 
-                    // 将策略转换为 ProxyNode
-                    for policy in policies {
-                        let node = ProxyNode(
-                            id: "\(groupName)_\(policy.name)",
-                            name: policy.name,
-                            type: policy.typeDescription,
-                            alive: true,
-                            delay: 0, // Surge 不提供延迟信息
-                            history: []
-                        )
-                        allNodes.append(node)
+                let globalGroup = ProxyGroup(
+                    name: "Global Proxy",
+                    type: "SurgeGlobal",
+                    now: globalSelection,
+                    all: allGlobalPolicies,
+                    alive: true,
+                    icon: nil
+                )
+                proxyGroups.append(globalGroup)
+                localGroupSelections["Global Proxy"] = globalSelection
+
+                // 处理策略组中的策略
+                for groupName in policies.policyGroups {
+                    if let groupPolicies = policyGroups.groups[groupName] {
+                        // 将策略转换为 ProxyNode
+                        for policy in groupPolicies {
+                            let node = ProxyNode(
+                                id: "\(groupName)_\(policy.name)",
+                                name: policy.name,
+                                type: policy.typeDescription,
+                                alive: true,
+                                delay: 0, // Surge 不提供延迟信息
+                                history: []
+                            )
+                            allNodes.append(node)
+                        }
                     }
                 }
-            }
 
-            // 处理单独的代理策略
-            for proxyName in policies.proxies {
-                let node = ProxyNode(
-                    id: "proxy_\(proxyName)",
-                    name: proxyName,
-                    type: "SurgeProxy",
-                    alive: true,
-                    delay: 0,
-                    history: []
-                )
-                allNodes.append(node)
+                // 处理单独的代理策略
+                for proxyName in policies.proxies {
+                    let node = ProxyNode(
+                        id: "proxy_\(proxyName)",
+                        name: proxyName,
+                        type: "SurgeProxy",
+                        alive: true,
+                        delay: 0,
+                        history: []
+                    )
+                    allNodes.append(node)
+                }
+
+            } else {
+                // 非全局模式：显示正常的策略组
+                logger.info("非全局模式：显示正常策略组")
+
+                // 并发获取所有策略组的当前选择
+                var selectionTasks: [String: Task<String?, Error>] = [:]
+                for groupName in policies.policyGroups {
+                    selectionTasks[groupName] = Task {
+                        do {
+                            return try await fetchSurgePolicySelection(groupName: groupName)
+                        } catch {
+                            logger.warning("获取策略组 '\(groupName)' 的当前选择失败: \(error.localizedDescription)")
+                            return nil
+                        }
+                    }
+                }
+
+                // 等待所有选择获取完成
+                for (groupName, task) in selectionTasks {
+                    do {
+                        let selection = try await task.value
+                        localGroupSelections[groupName] = selection ?? ""
+                    } catch {
+                        logger.error("等待策略组 '\(groupName)' 选择结果时出错: \(error.localizedDescription)")
+                        localGroupSelections[groupName] = ""
+                    }
+                }
+
+                // 处理策略组
+                for groupName in policies.policyGroups {
+                    if let policies = policyGroups.groups[groupName] {
+                        // 获取当前选中的策略（从并发获取的结果中）
+                        let currentSelection = localGroupSelections[groupName] ?? ""
+
+                        // 获取策略名称列表
+                        let policyNames = policies.map { $0.name }
+
+                        // 创建 ProxyGroup
+                        let proxyGroup = ProxyGroup(
+                            name: groupName,
+                            type: "SurgePolicyGroup",
+                            now: currentSelection,
+                            all: policyNames,
+                            alive: true,
+                            icon: nil
+                        )
+                        proxyGroups.append(proxyGroup)
+
+                        // 将策略转换为 ProxyNode
+                        for policy in policies {
+                            let node = ProxyNode(
+                                id: "\(groupName)_\(policy.name)",
+                                name: policy.name,
+                                type: policy.typeDescription,
+                                alive: true,
+                                delay: 0, // Surge 不提供延迟信息
+                                history: []
+                            )
+                            allNodes.append(node)
+                        }
+                    }
+                }
+
+                // 处理单独的代理策略
+                for proxyName in policies.proxies {
+                    let node = ProxyNode(
+                        id: "proxy_\(proxyName)",
+                        name: proxyName,
+                        type: "SurgeProxy",
+                        alive: true,
+                        delay: 0,
+                        history: []
+                    )
+                    allNodes.append(node)
+                }
             }
 
             // 更新数据
@@ -654,10 +727,12 @@ class ProxyViewModel: ObservableObject {
                 objectWillChange.send()
             }
 
-            logger.info("成功转换 Surge 数据为 Clash 格式 - 组: \(proxyGroups.count), 节点: \(allNodes.count)")
+            logger.info("成功转换 Surge 数据为 Clash 格式 - 模式: \(currentMode), 组: \(proxyGroups.count), 节点: \(allNodes.count)")
 
-            // 执行智能测速
-            await performSmartSpeedTest(policyGroups: policyGroups)
+            // 执行智能测速（仅在非全局模式下）
+            if currentMode != "global" {
+                await performSmartSpeedTest(policyGroups: policyGroups)
+            }
 
         } catch {
             logger.error("获取 Surge 代理数据失败: \(error.localizedDescription)")
@@ -873,26 +948,51 @@ class ProxyViewModel: ObservableObject {
     // Surge 代理选择
     private func selectSurgeProxy(groupName: String, proxyName: String) async {
         do {
-            // 1. 发送 POST 请求切换代理组选择
-            try await selectSurgePolicy(groupName: groupName, policyName: proxyName)
-            logger.info("Surge 代理切换 POST 请求完成 - 组: \(groupName), 策略: \(proxyName)")
+            if groupName == "Global Proxy" {
+                // Global Proxy 组使用特殊的 API
+                try await selectSurgeGlobalPolicy(policyName: proxyName)
+                logger.info("Surge Global 模式切换完成 - 策略: \(proxyName)")
 
-            // 2. 发送 GET 请求确认切换结果
-            let confirmedSelection = try await fetchSurgePolicySelection(groupName: groupName)
-            logger.info("Surge 代理切换确认 - 组: \(groupName), 确认的选择: \(confirmedSelection)")
+                // 确认切换结果
+                let confirmedSelection = try await fetchSurgeGlobalSelection()
+                logger.info("Surge Global 模式切换确认 - 确认的选择: \(confirmedSelection)")
 
-            // 3. 更新 UI 数据
-            await MainActor.run {
-                // 更新 groupSelections
-                self.groupSelections[groupName] = confirmedSelection
+                // 更新 UI 数据
+                await MainActor.run {
+                    // 更新 groupSelections
+                    self.groupSelections[groupName] = confirmedSelection
 
-                // 更新对应的 ProxyGroup 的 now 属性
-                if let groupIndex = self.groups.firstIndex(where: { $0.name == groupName }) {
-                    self.groups[groupIndex].now = confirmedSelection
+                    // 更新对应的 ProxyGroup 的 now 属性
+                    if let groupIndex = self.groups.firstIndex(where: { $0.name == groupName }) {
+                        self.groups[groupIndex].now = confirmedSelection
+                    }
+
+                    // 通知 UI 更新
+                    self.objectWillChange.send()
                 }
+            } else {
+                // 普通策略组使用原有的逻辑
+                // 1. 发送 POST 请求切换代理组选择
+                try await selectSurgePolicy(groupName: groupName, policyName: proxyName)
+                logger.info("Surge 代理切换 POST 请求完成 - 组: \(groupName), 策略: \(proxyName)")
 
-                // 通知 UI 更新
-                self.objectWillChange.send()
+                // 2. 发送 GET 请求确认切换结果
+                let confirmedSelection = try await fetchSurgePolicySelection(groupName: groupName)
+                logger.info("Surge 代理切换确认 - 组: \(groupName), 确认的选择: \(confirmedSelection)")
+
+                // 3. 更新 UI 数据
+                await MainActor.run {
+                    // 更新 groupSelections
+                    self.groupSelections[groupName] = confirmedSelection
+
+                    // 更新对应的 ProxyGroup 的 now 属性
+                    if let groupIndex = self.groups.firstIndex(where: { $0.name == groupName }) {
+                        self.groups[groupIndex].now = confirmedSelection
+                    }
+
+                    // 通知 UI 更新
+                    self.objectWillChange.send()
+                }
             }
 
         } catch {
@@ -1392,36 +1492,19 @@ class ProxyViewModel: ObservableObject {
     
     // 修改 getSortedGroups 方法，只保留 GLOBAL 组排序逻辑
     func getSortedGroups() -> [ProxyGroup] {
-        // 对于 Surge 控制器，保持 API 返回的原始顺序
+        // 对于 Surge 控制器，根据代理模式决定显示内容
         if server.source == .surge {
-            // 获取智能显示设置
-            let smartDisplay = UserDefaults.standard.bool(forKey: "smartProxyGroupDisplay")
+            // Surge API 返回: rule(规则)/proxy(全局)/direct(直连)
+            // 我们将 proxy 映射为 global 模式
+            let isGlobalMode = currentOutboundMode == "proxy"
 
-            // 如果启用了智能显示，根据当前模式过滤组，但保持原始顺序
-            if smartDisplay {
-                // 获取当前模式
-                let currentMode = UserDefaults.standard.string(forKey: "currentMode") ?? "rule"
-
-                // 根据模式过滤组，保持原始顺序
-                let filteredGroups = groups.filter { group in
-                    switch currentMode {
-                    case "global":
-                        // 全局模式下只显示 GLOBAL 组
-                        return group.name == "GLOBAL"
-                    case "rule", "direct":
-                        // 规则和直连模式下隐藏 GLOBAL 组
-                        return group.name != "GLOBAL"
-                    default:
-                        return true
-                    }
-                }
-
-                // 返回过滤后的组，保持原始顺序（即 Surge API 返回的顺序）
-                return filteredGroups
+            if isGlobalMode {
+                // 全局模式下只显示 Global Proxy 组
+                return groups.filter { $0.name == "Global Proxy" }
+            } else {
+                // 非全局模式显示正常的策略组，保持 API 返回的顺序
+                return groups.filter { $0.name != "Global Proxy" }
             }
-
-            // 如果没有启用智能显示，直接返回原始顺序
-            return groups
         }
 
         // 对于 Clash/OpenWRT 控制器，使用原来的排序逻辑
@@ -2227,5 +2310,56 @@ extension ProxyViewModel {
         } catch {
             logger.error("智能测速失败: \(error.localizedDescription)")
         }
+    }
+
+    // 获取当前代理模式
+    func fetchSurgeOutboundMode() async throws -> String {
+        guard let request = makeRequest(path: "v1/outbound") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+
+        struct OutboundMode: Codable {
+            let mode: String
+        }
+
+        let outboundMode = try JSONDecoder().decode(OutboundMode.self, from: data)
+        logger.info("当前代理模式: \(outboundMode.mode)")
+        return outboundMode.mode
+    }
+
+    // 获取 Global 模式当前选择的策略
+    func fetchSurgeGlobalSelection() async throws -> String {
+        guard let request = makeRequest(path: "v1/outbound/global") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.secure.data(for: request)
+        let selection = try JSONDecoder().decode(SurgePolicySelection.self, from: data)
+        logger.info("Global 模式当前选择: \(selection.policy)")
+        return selection.policy
+    }
+
+    // 设置 Global 模式选择的策略
+    func selectSurgeGlobalPolicy(policyName: String) async throws {
+        guard var request = makeRequest(path: "v1/outbound/global") else {
+            throw URLError(.badURL)
+        }
+
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = ["policy": policyName]
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (_, response) = try await URLSession.secure.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+
+        logger.info("成功设置 Global 模式为策略: \(policyName)")
     }
 } 
