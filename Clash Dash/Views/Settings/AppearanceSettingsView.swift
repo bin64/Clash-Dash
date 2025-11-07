@@ -4,14 +4,32 @@ import Shared
 enum ConnectionRowStyle: String, CaseIterable, Identifiable {
     case classic
     case modern
-    
+
     var id: String { rawValue }
-    
+
     var description: String {
         switch self {
         case .classic: return "详细"
         case .modern: return "简约"
         }
+    }
+}
+
+enum AppIconStyle: String, CaseIterable, Identifiable {
+    case `default` = "AppIcon"
+    case pixel = "AppIcon-Pixel"
+
+    var id: String { rawValue }
+
+    var description: String {
+        switch self {
+        case .default: return "简单"
+        case .pixel: return "像素"
+        }
+    }
+
+    func setAsAlternateIcon() {
+        UIApplication.shared.setAlternateIconName(rawValue == "AppIcon" ? nil : rawValue)
     }
 }
 
@@ -27,6 +45,7 @@ struct AppearanceSettingsView: View {
     @AppStorage("widgetDefaultServer") private var widgetDefaultServer: String = ""
     @AppStorage("showDelayRingChart") private var showDelayRingChart = false
     @AppStorage("useFloatingTabs") private var useFloatingTabs = false
+    @AppStorage("appIconStyle") private var appIconStyle = AppIconStyle.default
     @State private var lowDelaySliderValue: Double = 0
     @State private var mediumDelaySliderValue: Double = 0
     @StateObject private var locationManager = LocationManager()
@@ -42,18 +61,36 @@ struct AppearanceSettingsView: View {
                             .tag(mode)
                     }
                 }
-                
+
                 Picker("代理视图样式", selection: $proxyViewStyle) {
                     ForEach(ProxyViewStyle.allCases) { style in
                         Text(style.description)
                             .tag(style)
                     }
                 }
-                
+
                 if proxyViewStyle == .zash {
                     Toggle("显示延迟环形图", isOn: $showDelayRingChart)
                 }
-                
+
+                Picker("应用图标", selection: $appIconStyle) {
+                    ForEach(AppIconStyle.allCases) { icon in
+                        HStack {
+                            Image(uiImage: UIImage(named: icon.rawValue) ?? UIImage())
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 32)
+                                .cornerRadius(6)
+                                .clipped()
+                            Text(icon.description)
+                        }
+                        .tag(icon)
+                    }
+                }
+                .onChange(of: appIconStyle) { newValue in
+                    newValue.setAsAlternateIcon()
+                }
+
                 Toggle("使用浮动标签页", isOn: $useFloatingTabs)
 
                 NavigationLink {
