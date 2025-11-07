@@ -9,7 +9,7 @@ class LogViewModel: ObservableObject {
     @Published var isConnected = false
     @Published var isUserPaused = false
     private var logLevel: String = "info"
-    
+
     private var webSocketTask: URLSessionWebSocketTask?
     private let session = URLSession(configuration: .default)
     private var currentServer: ClashServer?
@@ -17,6 +17,10 @@ class LogViewModel: ObservableObject {
     private var connectionRetryCount = 0
     private let maxRetryCount = 5
     private var reconnectTask: Task<Void, Never>?
+
+    // Surge 相关属性
+    private var surgeFetchTimer: Timer?
+    private var lastEventIds: Set<String> = [] // 用于跟踪已处理的 Surge 事件
     
     // 添加日志缓冲队列
     private var logBuffer: [LogMessage] = []
@@ -36,6 +40,7 @@ class LogViewModel: ObservableObject {
         stopDisplayTimer()
         webSocketTask?.cancel()
         webSocketTask = nil
+        stopSurgeTimer()
     }
     
     private func setupNetworkMonitoring() {
@@ -62,6 +67,11 @@ class LogViewModel: ObservableObject {
     private func stopDisplayTimer() {
         displayTimer?.invalidate()
         displayTimer = nil
+    }
+
+    private func stopSurgeTimer() {
+        surgeFetchTimer?.invalidate()
+        surgeFetchTimer = nil
     }
     
     private func displayNextLog() {
@@ -90,7 +100,7 @@ class LogViewModel: ObservableObject {
         self.logLevel = level
         // print("📝 切换实时日志级别到: \(level)")
         logger.info("切换实时日志级别到: \(level)")
-        
+
         Task { @MainActor in
             // 先断开现有连接
             disconnect(clearLogs: false)
@@ -143,44 +153,168 @@ class LogViewModel: ObservableObject {
         }
         return URLSession(configuration: config)
     }
+
+    // Surge 事件获取相关方法
+    private func startSurgeEventFetching(server: ClashServer) {
+        print("🚀 开始 Surge 事件获取")
+        stopSurgeTimer()
+
+        // 立即获取一次
+        fetchSurgeEvents(server: server)
+
+        // 每 3 秒获取一次
+        surgeFetchTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.fetchSurgeEvents(server: server)
+        }
+    }
+
+    private func fetchSurgeEvents(server: ClashServer) {
+        let scheme = server.source == .surge ? (server.surgeUseSSL ? "https" : "http") : (server.clashUseSSL ? "https" : "http")
+        let urlString = "\(scheme)://\(server.url):\(server.port)/v1/events"
+        print("🌐 请求 Surge 事件: \(urlString)")
+
+        guard let url = URL(string: urlString) else {
+            logger.error("无效的 Surge 事件 URL: \(urlString)")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+
+        if server.source == .surge {
+//            print("🔑 使用 Surge 认证，key长度: \(server.surgeKey.count)")
+            request.setValue(server.surgeKey, forHTTPHeaderField: "x-key")
+        } else {
+            request.setValue("Bearer \(server.secret)", forHTTPHeaderField: "Authorization")
+        }
+
+        Task {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    print("✅ Surge 事件 API 响应成功，数据大小: \(data.count) bytes")
+
+                    // 打印原始响应数据用于调试
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("📄 原始响应数据: \(responseString.prefix(500))")
+                    }
+
+                    let eventList = try JSONDecoder().decode(SurgeEventList.self, from: data)
+
+                    await MainActor.run {
+                        self.isConnected = true
+                        print("📝 成功解析到 \(eventList.events.count) 个 Surge 事件")
+                        self.processSurgeEvents(eventList.events)
+                    }
+                } else {
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    print("❌ Surge 事件 API 返回状态码: \(statusCode)")
+
+                    // 如果有响应数据，也打印出来
+                    if data.count > 0, let errorString = String(data: data, encoding: .utf8) {
+                        print("❌ 错误响应内容: \(errorString)")
+                    }
+
+                    await MainActor.run {
+                        self.isConnected = false
+                    }
+                }
+            } catch let decodingError as DecodingError {
+                print("❌ JSON 解析错误: \(decodingError.localizedDescription)")
+//                if let responseString = String(data: data, encoding: .utf8) {
+//                    print("❌ 无法解析的数据: \(responseString.prefix(500))")
+//                }
+                await MainActor.run {
+                    self.isConnected = false
+                }
+            } catch {
+                print("❌ 网络请求错误: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.isConnected = false
+                }
+            }
+        }
+    }
+
+    private func processSurgeEvents(_ events: [SurgeEvent]) {
+        print("🔄 处理 \(events.count) 个 Surge 事件")
+
+        // 过滤出新的未处理事件
+        let newEvents = events.filter { !lastEventIds.contains($0.id) }
+        print("🆕 发现 \(newEvents.count) 个新事件")
+
+        // 更新已处理事件 ID 集合
+        lastEventIds.formUnion(newEvents.map { $0.id })
+
+        // 只保留最近 100 个事件 ID，避免内存泄漏
+        if lastEventIds.count > 100 {
+            // 保留最新的 50 个事件 ID
+            let sortedEvents = events.sorted { $0.timestamp > $1.timestamp }
+            lastEventIds = Set(sortedEvents.prefix(50).map { $0.id })
+        }
+
+        // 将新事件转换为日志消息并添加到缓冲区
+        for event in newEvents.sorted(by: { $0.timestamp < $1.timestamp }) {
+            logBuffer.append(event.logMessage)
+            print("📝 添加事件: \(event.content.prefix(50))...")
+        }
+
+        print("📊 当前日志缓冲区大小: \(logBuffer.count)")
+
+        // 如果定时器没有运行，启动定时器
+        if displayTimer == nil {
+            startDisplayTimer()
+        }
+    }
     
     func connect(to server: ClashServer) {
         // 取消现有的重连任务
         reconnectTask?.cancel()
         reconnectTask = nil
-        
+
         // 如果是用户手动暂停的，不要连接
         if isUserPaused {
             return
         }
-        
+
         // 如果已经连接到同一个服务器，不要重复连接
         if isConnected && currentServer?.id == server.id {
             return
         }
-        
+
         // print("📡 开始连接到服务器: \(server.url):\(server.port)")
         logger.info("开始连接到服务器: \(server.url):\(server.port)")
-        
+
         currentServer = server
-        
-        guard let request = makeWebSocketRequest(server: server) else {
-            // print("无法创建 WebSocket 请求")
-            logger.error("无法创建 WebSocket 请求")
-            return
+
+        if server.source == .surge {
+            // Surge 使用 HTTP API 获取事件
+            print("🌊 连接到 Surge 服务器，开始获取事件")
+            startSurgeEventFetching(server: server)
+            DispatchQueue.main.async {
+                self.isConnected = true
+            }
+        } else {
+            // Clash 使用 WebSocket 获取日志
+            guard let request = makeWebSocketRequest(server: server) else {
+                // print("无法创建 WebSocket 请求")
+                logger.error("无法创建 WebSocket 请求")
+                return
+            }
+
+            // 使用支持 SSL 的会话
+            let session = makeSession(server: server)
+            webSocketTask?.cancel()
+            webSocketTask = session.webSocketTask(with: request)
+            webSocketTask?.resume()
+
+            DispatchQueue.main.async {
+                self.isConnected = true
+            }
+
+            receiveLog()
         }
-        
-        // 使用支持 SSL 的会话
-        let session = makeSession(server: server)
-        webSocketTask?.cancel()
-        webSocketTask = session.webSocketTask(with: request)
-        webSocketTask?.resume()
-        
-        DispatchQueue.main.async {
-            self.isConnected = true
-        }
-        
-        receiveLog()
     }
     
     private func handleWebSocketError(_ error: Error) {
@@ -281,17 +415,20 @@ class LogViewModel: ObservableObject {
         // 取消重连任务
         reconnectTask?.cancel()
         reconnectTask = nil
-        
+
         networkMonitor.cancel()
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
+        stopSurgeTimer()
         stopDisplayTimer()
         logBuffer.removeAll()
-        
+
         DispatchQueue.main.async {
             self.isConnected = false
             if clearLogs {
                 self.logs.removeAll()
+                // 清空已处理的事件 ID
+                self.lastEventIds.removeAll()
             }
         }
     }

@@ -7,38 +7,40 @@ struct LogView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // 日志级别选择器
-            VStack(spacing: 0) {
-                NavigationLink {
-                    LogLevelSelectionView(
-                        selectedLevel: $selectedLevel,
-                        onLevelSelected: { level in
-                            viewModel.setLogLevel(level.wsLevel)
+            // 日志级别选择器（仅 Clash 控制器显示）
+            if server.source != .surge {
+                VStack(spacing: 0) {
+                    NavigationLink {
+                        LogLevelSelectionView(
+                            selectedLevel: $selectedLevel,
+                            onLevelSelected: { level in
+                                viewModel.setLogLevel(level.wsLevel)
+                            }
+                        )
+                    } label: {
+                        HStack {
+                            Label {
+                                Text("日志级别")
+                                    .foregroundColor(.primary)
+                            } icon: {
+                                Image(systemName: "list.bullet.circle.fill")
+                                    .foregroundColor(selectedLevel.color)
+                            }
+                            Spacer()
+                            Text(selectedLevel.rawValue)
+                                .foregroundColor(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
                         }
-                    )
-                } label: {
-                    HStack {
-                        Label {
-                            Text("日志级别")
-                                .foregroundColor(.primary)
-                        } icon: {
-                            Image(systemName: "list.bullet.circle.fill")
-                                .foregroundColor(selectedLevel.color)
-                        }
-                        Spacer()
-                        Text(selectedLevel.rawValue)
-                            .foregroundColor(.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.secondary)
+                        .padding()
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .cornerRadius(12)
                     }
-                    .padding()
-                    .background(Color(.secondarySystemGroupedBackground))
-                    .cornerRadius(12)
                 }
+                .padding()
+                .background(Color(.systemGroupedBackground))
             }
-            .padding()
-            .background(Color(.systemGroupedBackground))
             
             // 日志列表
             ZStack {
@@ -68,7 +70,7 @@ struct LogView: View {
             }
             .frame(maxHeight: .infinity)
         }
-        .navigationTitle("内核日志")
+        .navigationTitle(server.source == .surge ? "系统事件" : "内核日志")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

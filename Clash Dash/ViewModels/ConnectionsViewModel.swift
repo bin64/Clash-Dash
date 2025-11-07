@@ -2,6 +2,8 @@ import Foundation
 import Combine
 import SwiftUI  // 添加这行
 
+private let logger = LogManager.shared
+
 @MainActor
 class ConnectionsViewModel: ObservableObject, Sendable {
     @AppStorage("connectionRowStyle") var connectionRowStyle = ConnectionRowStyle.classic
@@ -923,6 +925,7 @@ class ConnectionsViewModel: ObservableObject, Sendable {
                     switch decodingError {
                     case .keyNotFound(let key, let context):
                         print("DEBUG: 缺失的字段: '\(key.stringValue)'")
+                        logger.error("Surge API JSON 解析失败，缺失的字段: '\(key.stringValue)'")
                         print("DEBUG: 错误路径: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
                         if let lastPath = context.codingPath.last {
                             print("DEBUG: 问题出现在数组索引: \(lastPath)")
