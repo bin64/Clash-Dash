@@ -39,5 +39,6 @@ jobs:
         with:
           files: Clash_Dash_unsigned.ipa
           generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
