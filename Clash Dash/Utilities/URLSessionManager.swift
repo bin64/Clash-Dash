@@ -27,12 +27,18 @@ class URLSessionManager: NSObject, URLSessionDelegate {
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        // 提取变量避免字符串插值时的内存所有权问题
+        let authMethod = challenge.protectionSpace.authenticationMethod
+        let host = challenge.protectionSpace.host
+        let port = challenge.protectionSpace.port
+        let protocolType = challenge.protectionSpace.protocol?.description ?? "unknown"
+
         let messages = [
             "收到证书验证请求",
-            "认证方法: \(challenge.protectionSpace.authenticationMethod)",
-            "主机: \(challenge.protectionSpace.host)",
-            "端口: \(challenge.protectionSpace.port)",
-            "协议: \(challenge.protectionSpace.protocol.map { $0 } ?? "unknown")"
+            "认证方法: \(authMethod)",
+            "主机: \(host)",
+            "端口: \(port)",
+            "协议: \(protocolType)"
         ]
         
         messages.forEach { message in
