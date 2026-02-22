@@ -2,7 +2,7 @@
 
 Clash Dash 是一款原生 SwiftUI 开发的 OpenClash/Nikki（原MihomoTProxy）管理工具。
 
-<a href="https://apps.apple.com/cn/app/clash-dash/id6738882561?platform=iphone">
+<a href="https://apps.apple.com/cn/app/clash-mate/id6758199321?platform=iphone">
     <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" style="width: 120px;">
 </a>
 
